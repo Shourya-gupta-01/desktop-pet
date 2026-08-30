@@ -47,29 +47,60 @@ pub fn start_audio_listener(tx: Sender<PetMessage>) {
         let stream = match config.sample_format() {
             cpal::SampleFormat::F32 => {
                 let mut last_event_time = Instant::now();
+                let mut candidate: Option<(f32, Instant)> = None;
 
                 device.build_input_stream(
                     &config.into(),
                     move |data: &[f32], _: &cpal::InputCallbackInfo| {
                         let mut sum_squares = 0.0;
+                        let mut peak = 0.0_f32;
                         for &sample in data {
+                            let abs_sample = sample.abs();
+                            if abs_sample > peak {
+                                peak = abs_sample;
+                            }
                             sum_squares += sample * sample;
                         }
                         let rms = (sum_squares / data.len() as f32).sqrt();
-                        
-                        // We found that claps produce an RMS around 0.027.
-                        // Setting threshold to 0.02 for reliable triggering.
-                        if rms > 0.02 && last_event_time.elapsed() > Duration::from_millis(1000) {
-                            println!("[Audio] Loud noise detected! RMS: {:.4}", rms);
-                            last_event_time = Instant::now();
-                            
-                            let msg = PetMessage {
-                                message_type: Some(MessageType::AudioEvent(AudioEvent {
-                                    amplitude: rms,
-                                    is_clap: true,
-                                })),
-                            };
-                            let _ = tx_clone.send(msg);
+
+                        // 1. Verify previous impulse candidate:
+                        // A true clap dies down within < 40ms. If sound is sustained, it is speech/yelling.
+                        if let Some((candidate_peak, candidate_time)) = candidate {
+                            let elapsed = candidate_time.elapsed();
+                            if elapsed < Duration::from_millis(60) {
+                                if rms > 0.08 {
+                                    // Sound is sustained across consecutive chunks -> It's speech/voice, cancel!
+                                    candidate = None;
+                                } else if elapsed >= Duration::from_millis(8) {
+                                    // Sound sharply dropped to silence -> Confirmed acoustic clap impulse!
+                                    candidate = None;
+                                    if last_event_time.elapsed() > Duration::from_millis(600) {
+                                        println!(
+                                            "[Audio] Confirmed Clap! Peak: {:.2}, Immediate Decay: RMS {:.3}",
+                                            candidate_peak, rms
+                                        );
+                                        last_event_time = Instant::now();
+
+                                        let msg = PetMessage {
+                                            message_type: Some(MessageType::AudioEvent(AudioEvent {
+                                                amplitude: candidate_peak,
+                                                is_clap: true,
+                                            })),
+                                        };
+                                        let _ = tx_clone.send(msg);
+                                    }
+                                }
+                            } else {
+                                candidate = None;
+                            }
+                        }
+
+                        // 2. Detect initial sharp percussive impulse (Peak >= 0.45, Crest Factor >= 3.8)
+                        if candidate.is_none() && rms > 0.01 && peak >= 0.45 {
+                            let crest_factor = peak / rms;
+                            if crest_factor >= 3.8 && last_event_time.elapsed() > Duration::from_millis(600) {
+                                candidate = Some((peak, Instant::now()));
+                            }
                         }
                     },
                     err_fn,
