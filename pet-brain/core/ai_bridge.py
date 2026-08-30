@@ -145,10 +145,12 @@ class AIBridge:
         prompt: str,
         image_bytes: bytes,
         model: Optional[str] = None,
+        options: Optional[Dict[str, Any]] = None,
         on_token: Optional[Callable[[str], None]] = None,
     ) -> str:
         """
-        Synchronously prompt multimodal vision model (e.g. LLaVA) with image bytes.
+        Synchronously prompt multimodal vision model with image bytes.
+        No artificial context or token limits by default.
         """
         target_model = model or self.vision_model
         b64_image = base64.b64encode(image_bytes).decode("utf-8")
@@ -158,6 +160,8 @@ class AIBridge:
             "images": [b64_image],
             "stream": on_token is not None,
         }
+        if options:
+            payload["options"] = options
 
         try:
             if on_token:
@@ -188,6 +192,7 @@ class AIBridge:
         image_bytes: bytes,
         callback: Optional[Callable[[str], None]] = None,
         model: Optional[str] = None,
+        options: Optional[Dict[str, Any]] = None,
         on_token: Optional[Callable[[str], None]] = None,
     ) -> Future:
         """
@@ -195,7 +200,7 @@ class AIBridge:
         When finished, invokes callback(full_text).
         """
         def _worker():
-            result = self.prompt_vision(prompt=prompt, image_bytes=image_bytes, model=model, on_token=on_token)
+            result = self.prompt_vision(prompt=prompt, image_bytes=image_bytes, model=model, options=options, on_token=on_token)
             if callback:
                 try:
                     callback(result)

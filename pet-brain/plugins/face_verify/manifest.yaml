@@ -1,0 +1,6 @@
+name: FaceVerify
+version: 1.0.0
+description: User presence and face perception plugin that detects when the user is at their desk and greets them.
+subscriptions:
+  - hotkey:face_scan
+tick_interval: 20.0

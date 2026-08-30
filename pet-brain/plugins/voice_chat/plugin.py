@@ -1,22 +1,28 @@
 import time
 import subprocess
+from typing import Optional
+import cv2
+import numpy as np
 from core.base_plugin import BasePlugin, PluginManifest, PluginContext, IncomingEvent
 
 
 class VoiceChatPlugin(BasePlugin):
     """
-    Unified Voice, Vision & Push-to-Talk Companion Plugin:
+    Unified Voice, Dual-Vision & Push-to-Talk Companion Plugin:
     - Hold Super+Z: Listens while held, processes when released.
     - Double Clap Toggle: Clap once to start speaking, clap again when finished.
-    - Multimodal Awareness: Automatically captures screen and answers using LLaVA (if visual question) or Mistral.
-    - Unlimited Tokens: Never cuts off sentences mid-thought.
+    - Dual Visual Perception (Webcam + Screen):
+        * Asks about face/user/room/glasses/camera -> captures webcam via OpenCV.
+        * Asks about screen/code/app/windows -> captures desktop via grim.
+    - Qwen2.5-VL 7B on GPU: High-accuracy multimodal vision and text reasoning.
+    - Unlimited Tokens: Streams complete, natural thoughts without truncation.
     """
 
     def get_manifest(self) -> PluginManifest:
         return PluginManifest(
             name="VoiceChat",
             version="1.0.0",
-            description="Unified Super+Z push-to-talk, clap toggle, and multimodal vision & voice AI companion.",
+            description="Unified Super+Z push-to-talk, clap toggle, and dual vision (webcam + screen) with Qwen2.5-VL 7B.",
             subscriptions=[
                 "hotkey:voice_press",
                 "hotkey:voice_release",
@@ -29,7 +35,7 @@ class VoiceChatPlugin(BasePlugin):
         self.ctx = context
         self.is_recording = False
         self.is_processing = False
-        self.ctx.logger.info("VoiceChatPlugin loaded! Ready for Super+Z and Clap-to-Talk.")
+        self.ctx.logger.info("VoiceChatPlugin loaded! Ready for Super+Z, Clap-to-Talk, and Dual Vision.")
 
     def on_event(self, event: IncomingEvent) -> None:
         # 1. Acoustic Clap Toggle (Clap to start, clap again to stop!)
@@ -124,6 +130,49 @@ class VoiceChatPlugin(BasePlugin):
                 callback=self._handle_transcribed_text,
             )
 
+    def _capture_webcam(self) -> Optional[bytes]:
+        """Capture a single frame from the webcam in volatile RAM with optimized V4L2 backend."""
+        try:
+            cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+            if not cap.isOpened():
+                cap = cv2.VideoCapture(0)
+            if not cap.isOpened():
+                return None
+
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*'MJPG'))
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+            ret, frame = cap.read()
+            cap.release()
+
+            if not ret or frame is None:
+                return None
+
+            # Resize to 384x288 to drastically reduce vision tokens and cut inference latency by 4x
+            small = cv2.resize(frame, (384, 288))
+            success, buffer = cv2.imencode(".jpg", small, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
+            return buffer.tobytes() if success else None
+        except Exception as e:
+            self.ctx.logger.warning(f"Webcam capture failed: {e}")
+            return None
+
+    def _capture_screen(self) -> Optional[bytes]:
+        """Capture the current Wayland desktop screen in volatile RAM with full native resolution."""
+        try:
+            capture = subprocess.run(
+                ["grim", "-t", "jpeg", "-q", "75", "-"],
+                capture_output=True,
+                timeout=5.0,
+            )
+            if capture.returncode == 0 and capture.stdout:
+                return capture.stdout
+            return None
+        except Exception as e:
+            self.ctx.logger.warning(f"Screen capture failed: {e}")
+            return None
+
     def _handle_transcribed_text(self, text: str):
         if not text or len(text.strip()) == 0:
             self.ctx.logger.info("No speech detected.")
@@ -143,14 +192,25 @@ class VoiceChatPlugin(BasePlugin):
             self.is_recording = False
             return
 
-        # Check if the query refers to screen / visuals
         text_lower = text.lower()
-        visual_keywords = [
-            "screen", "look", "see", "this", "read", "code", "window",
-            "what is this", "what do you see", "describe", "image", "error",
-            "app", "browser", "page"
+
+        # Keywords for camera/webcam vision (looking at the human, face, room, clothing, specs)
+        camera_keywords = [
+            "camera", "webcam", "face", "look at me", "see me", "wearing", "glasses",
+            "specs", "spectacles", "hair", "holding", "room", "shirt", "my view",
+            "behind me", "am i", "my expression", "who am i", "looking at me", "how do i look"
         ]
-        is_visual_query = any(k in text_lower for k in visual_keywords)
+
+        # Keywords for desktop screen vision (code, IDE, terminals, windows, web pages, folders)
+        screen_keywords = [
+            "screen", "code", "window", "terminal", "desktop", "tab", "browser",
+            "read", "monitor", "file", "error", "on my screen", "app", "ui", "battery",
+            "folder", "directory", "project", "editor", "path", "open", "display",
+            "what is this", "what's this", "look at this", "describe"
+        ]
+
+        is_camera_query = any(k in text_lower for k in camera_keywords)
+        is_screen_query = not is_camera_query and any(k in text_lower for k in screen_keywords)
 
         first_token = [True]
 
@@ -169,34 +229,45 @@ class VoiceChatPlugin(BasePlugin):
             self.is_processing = False
             self.is_recording = False
 
-        if is_visual_query:
-            # Capture screen in memory and pass to LLaVA
-            try:
-                self.ctx.logger.info("Visual query detected! Capturing screen for LLaVA...")
-                capture = subprocess.run(
-                    ["grim", "-t", "jpeg", "-q", "55", "-"],
-                    capture_output=True,
-                    timeout=5.0,
+        # 1. Webcam Vision Path
+        if is_camera_query:
+            self.ctx.logger.info("Webcam visual query detected! Capturing camera frame...")
+            image_bytes = self._capture_webcam()
+            if image_bytes:
+                vision_prompt = (
+                    f"The user asked while in front of their webcam: '{text}'. "
+                    "You are a friendly, witty chibi anime companion. Look through their camera and give a complete, helpful, natural answer in 1 or 2 sentences."
                 )
-                if capture.returncode == 0:
-                    image_bytes = capture.stdout
-                    vision_prompt = (
-                        f"The user asked while looking at their desktop screen: '{text}'. "
-                        "You are a friendly, witty chibi anime companion. Look at their screen and give a complete, helpful, natural answer in 1 or 2 sentences."
-                    )
-                    self.ctx.ai.prompt_vision_async(
-                        prompt=vision_prompt,
-                        image_bytes=image_bytes,
-                        callback=on_complete,
-                        on_token=on_token,
-                    )
-                    return
-                else:
-                    self.ctx.logger.warning("grim failed, falling back to Mistral text prompt.")
-            except Exception as e:
-                self.ctx.logger.warning(f"Error capturing screen for vision: {e}")
+                self.ctx.ai.prompt_vision_async(
+                    prompt=vision_prompt,
+                    image_bytes=image_bytes,
+                    callback=on_complete,
+                    on_token=on_token,
+                )
+                return
+            else:
+                self.ctx.logger.warning("Webcam capture unavailable, trying screen or text fallback.")
 
-        # General conversational prompt via Mistral
+        # 2. Desktop Screen Vision Path
+        if is_screen_query:
+            self.ctx.logger.info("Screen visual query detected! Capturing desktop frame...")
+            image_bytes = self._capture_screen()
+            if image_bytes:
+                vision_prompt = (
+                    f"The user asked while looking at their desktop screen: '{text}'. "
+                    "You are a friendly, witty chibi anime companion. Look at their screen and give a complete, helpful, natural answer in 1 or 2 sentences."
+                )
+                self.ctx.ai.prompt_vision_async(
+                    prompt=vision_prompt,
+                    image_bytes=image_bytes,
+                    callback=on_complete,
+                    on_token=on_token,
+                )
+                return
+            else:
+                self.ctx.logger.warning("Screen capture unavailable, falling back to text prompt.")
+
+        # 3. General Conversational / Chat Path (Qwen2.5-VL 7B text mode)
         prompt_text = (
             f"The user said: '{text}'. "
             "You are a friendly, cute chibi anime companion. Give a complete, lively, natural answer in 1 or 2 sentences."
