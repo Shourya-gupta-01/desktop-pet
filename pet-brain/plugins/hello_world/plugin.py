@@ -7,7 +7,7 @@ class HelloWorldPlugin(BasePlugin):
             name="HelloWorld",
             version="1.0.0",
             description="Basic greeting plugin",
-            subscriptions=["input_event"],
+            subscriptions=["test_hello"],
             tick_interval=10.0,
         )
 
@@ -16,8 +16,9 @@ class HelloWorldPlugin(BasePlugin):
         self.ctx.logger.info("HelloWorldPlugin loaded and active!")
 
     def on_event(self, event: IncomingEvent) -> None:
-        self.ctx.logger.info(f"HelloWorld received event: {event.event_type} (hotkey: {event.hotkey_id})")
-        self.ctx.send_speech("Hello from HelloWorld plugin!")
+        if event.hotkey_id == "test_hello":
+            self.ctx.logger.info("HelloWorld received test_hello trigger!")
+            self.ctx.send_speech("Hello from HelloWorld plugin!")
 
     def on_tick(self, dt: float) -> None:
         self.ctx.logger.debug(f"HelloWorld tick! (dt={dt:.1f}s)")

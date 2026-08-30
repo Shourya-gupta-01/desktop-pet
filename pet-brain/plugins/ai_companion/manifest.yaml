@@ -1,0 +1,8 @@
+name: AICompanion
+version: 1.0.0
+author: DesktopPetTeam
+description: Demonstrates threaded Ollama streaming and AI reasoning on hotkey triggers.
+subscriptions:
+  - "hotkey:global_action_x"
+required_capabilities:
+  - ollama

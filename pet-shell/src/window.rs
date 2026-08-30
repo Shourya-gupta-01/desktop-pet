@@ -13,6 +13,9 @@ pub struct PetWindow {
     sprite_texture: Option<egui::TextureHandle>,
     ipc_rx: Receiver<PetMessage>,
     ipc_tx: Sender<PetMessage>,
+    speech_text: Option<String>,
+    speech_expiry: Option<std::time::Instant>,
+    debug_printed: bool,
 }
 
 impl PetWindow {
@@ -22,6 +25,9 @@ impl PetWindow {
             sprite_texture: None,
             ipc_rx,
             ipc_tx,
+            speech_text: None,
+            speech_expiry: None,
+            debug_printed: false,
         };
 
         // Load the initial static placeholder sprite
@@ -93,6 +99,10 @@ impl eframe::App for PetWindow {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Since mouse passthrough is active, the window never receives OS input focus.
+        // We request a continuous 30fps repaint so incoming IPC messages are drained immediately.
+        ctx.request_repaint_after(std::time::Duration::from_millis(33));
+
         // --- PHASE 2 CHECKPOINT: SEND INPUT EVENT ---
         // If the user presses Space while the window is focused, send an event to Python.
         ctx.input(|i| {
@@ -115,35 +125,108 @@ impl eframe::App for PetWindow {
 
         // Drain any incoming IPC messages (non-blocking)
         while let Ok(msg) = self.ipc_rx.try_recv() {
-            if let Some(MessageType::EmotionCommand(cmd)) = msg.message_type {
-                println!("[Window] Received EmotionCommand: {}", cmd.emotion_id);
-                // Dynamically change sprite based on emotion!
-                let path = format!("../assets/sprites/{}/placeholder.png", cmd.emotion_id);
-                self.set_sprite(&path);
+            match msg.message_type {
+                Some(MessageType::EmotionCommand(cmd)) => {
+                    println!("[Window] Received EmotionCommand: {}", cmd.emotion_id);
+                    let path = format!("../assets/sprites/{}/placeholder.png", cmd.emotion_id);
+                    self.set_sprite(&path);
+                }
+                Some(MessageType::SpeechBubble(bubble)) => {
+                    println!("[Window] Received SpeechBubble: {}", bubble.text);
+                    if bubble.is_streaming_chunk {
+                        let text = self.speech_text.get_or_insert_with(String::new);
+                        text.push_str(&bubble.text);
+                    } else {
+                        self.speech_text = Some(bubble.text);
+                    }
+                    self.speech_expiry = Some(std::time::Instant::now() + std::time::Duration::from_secs(6));
+                }
+                _ => {}
             }
-            // Request a repaint so the window updates if state changed
             ctx.request_repaint();
+        }
+
+        // Check for speech bubble expiry
+        if let Some(expiry) = self.speech_expiry {
+            if std::time::Instant::now() >= expiry {
+                self.speech_text = None;
+                self.speech_expiry = None;
+                ctx.request_repaint();
+            }
         }
 
         // Ensure the sprite texture is loaded (lazy init)
         self.ensure_texture(ctx);
 
-        // Render the transparent background and our sprite
+        // Render the transparent background, speech bubble, and sprite
         egui::CentralPanel::default()
             .frame(egui::Frame::default().fill(egui::Color32::TRANSPARENT))
             .show(ctx, |ui| {
-                ui.centered_and_justified(|ui| {
-                    if let Some(texture) = &self.sprite_texture {
-                        let size = texture.size_vec2();
-                        ui.image(egui::load::SizedTexture::new(texture.id(), size));
-                    } else {
-                        // Fallback text if no sprite loaded
-                        ui.heading(
-                            egui::RichText::new("No Sprite Loaded")
-                                .color(egui::Color32::RED),
-                        );
-                    }
-                });
+                let rect = ui.max_rect();
+                let w = rect.width();
+                let h = rect.height();
+
+                if !self.debug_printed {
+                    println!("[Window] DEBUG: Actual window rect = {:.0}x{:.0} (min={:.0},{:.0} max={:.0},{:.0})", w, h, rect.min.x, rect.min.y, rect.max.x, rect.max.y);
+                    self.debug_printed = true;
+                }
+
+                // Pet sprite is 200x200. Anchor it to bottom-right corner.
+                let pet_w = 200.0_f32;
+                let pet_pad = 15.0_f32; // padding from edges
+                let pet_x = rect.max.x - pet_w - pet_pad;
+                let pet_y = rect.max.y - pet_w - pet_pad;
+
+                // 1. Render Pet Sprite at fixed bottom-right (NEVER moves)
+                if let Some(texture) = &self.sprite_texture {
+                    let sprite_rect = egui::Rect::from_min_size(
+                        egui::pos2(pet_x, pet_y),
+                        egui::vec2(pet_w, pet_w),
+                    );
+                    ui.put(
+                        sprite_rect,
+                        egui::Image::new(texture)
+                            .tint(egui::Color32::from_rgba_unmultiplied(255, 255, 255, 242)),
+                    );
+                }
+
+                // 2. Speech Bubble: positioned RIGHT NEXT to the pet (not far away)
+                //    Bubble sits immediately to the left of the pet sprite in the bottom-right corner
+                if let Some(speech) = &self.speech_text {
+                    let bubble_width = 380.0_f32;          // Fixed readable width
+                    let bubble_right = pet_x - 15.0;       // 15px gap between bubble and pet
+                    let bubble_left = bubble_right - bubble_width;
+                    let bubble_top = pet_y + 20.0;         // Vertically aligned with pet
+                    let bubble_bottom = rect.max.y - pet_pad - 20.0;
+
+                    let bubble_area = egui::Rect::from_min_max(
+                        egui::pos2(bubble_left, bubble_top),
+                        egui::pos2(bubble_right, bubble_bottom),
+                    );
+
+                    ui.allocate_ui_at_rect(bubble_area, |ui| {
+                        ui.with_layout(egui::Layout::centered_and_justified(egui::Direction::TopDown), |ui| {
+                            egui::Frame::none()
+                                .fill(egui::Color32::from_rgba_unmultiplied(16, 16, 24, 245))
+                                .stroke(egui::Stroke::new(1.5_f32, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 160)))
+                                .rounding(14.0)
+                                .inner_margin(egui::Margin::symmetric(16.0, 12.0))
+                                .show(ui, |ui| {
+                                    ui.set_max_width(bubble_width - 32.0);
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(speech)
+                                                .color(egui::Color32::WHITE)
+                                                .size(14.0)
+                                                .line_height(Some(20.0))
+                                                .strong(),
+                                        )
+                                        .wrap(),
+                                    );
+                                });
+                        });
+                    });
+                }
             });
     }
 }

@@ -17,7 +17,7 @@ class ClapReactorPlugin(BasePlugin):
     def on_event(self, event: IncomingEvent) -> None:
         if event.is_clap:
             self.ctx.logger.info(f"Clap detected! (Amplitude: {event.data.get('amplitude', 0.0):.3f})")
-            self.ctx.send_emotion("startled", priority=200)
+            self.ctx.send_emotion("startled", priority=200, duration=3.0)
             self.ctx.send_speech("Whoa! Did you just clap?")
 
     def on_unload(self) -> None:

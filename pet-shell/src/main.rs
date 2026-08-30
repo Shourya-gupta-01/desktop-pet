@@ -27,8 +27,8 @@ fn main() -> eframe::Result<()> {
             .with_decorations(false)
             .with_transparent(true)
             .with_always_on_top()
-            .with_inner_size([200.0, 200.0])            // Compact size for the chibi sprite
-            .with_position(egui::pos2(1700.0, 850.0))   // Bottom-right corner (adjust to your resolution)
+            .with_inner_size([620.0, 230.0])            // Matches Hyprland rule: 620x230 for side-by-side layout
+            .with_position(egui::pos2(1300.0, 850.0))   // Hyprland overrides this via windowrule
             .with_mouse_passthrough(true)
             .with_app_id("desktop-pet".to_string()),     // Wayland app_id for Hyprland rules
         ..Default::default()

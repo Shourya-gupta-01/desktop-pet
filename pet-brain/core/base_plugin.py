@@ -64,22 +64,39 @@ class PluginContext:
     Encapsulates communication, AI access, scoped logging, and persistent configuration.
     """
     ipc: Any  # IPCServer instance
+    emotion_engine: Optional[Any] = None
     ai: Optional[Any] = None  # AIBridge instance (for LLM / Ollama interactions)
     config: Dict[str, Any] = field(default_factory=dict)
     logger: logging.Logger = field(default_factory=lambda: logging.getLogger("Plugin"))
     state: Dict[str, Any] = field(default_factory=dict)
 
-    def send_emotion(self, emotion_id: str, priority: int = 100) -> None:
+    def send_emotion(
+        self,
+        emotion_id: str,
+        priority: Optional[int] = None,
+        duration: Optional[float] = 3.0,
+    ) -> None:
         """
         Request a sprite / emotion state change on the Rust desktop pet shell.
+        If an EmotionEngine is active, delegates to it for priority arbitration and automatic decay to 'idle'.
         
-        :param emotion_id: Emotion identifier corresponding to asset folder (e.g., "happy", "startled", "curious", "idle")
-        :param priority: Priority level (0-255). Higher priority overrides lower priority emotions.
+        :param emotion_id: One of 16 emotions ("happy", "startled", "curious", "thinking", "idle", etc.)
+        :param priority: Priority level (0-255). If None, uses default priority for the emotion.
+        :param duration: Time in seconds before decaying back to lower priority / idle. None for persistent.
         """
-        msg = pet_pb2.PetMessage()
-        msg.emotion_command.emotion_id = emotion_id
-        msg.emotion_command.priority = priority
-        self.ipc.send_message(msg)
+        if self.emotion_engine:
+            self.emotion_engine.request_emotion(
+                emotion_id=emotion_id,
+                priority=priority,
+                duration=duration,
+                source=self.logger.name,
+            )
+        else:
+            eff_prio = priority if priority is not None else 100
+            msg = pet_pb2.PetMessage()
+            msg.emotion_command.emotion_id = emotion_id
+            msg.emotion_command.priority = eff_prio
+            self.ipc.send_message(msg)
 
     def send_speech(self, text: str, is_streaming: bool = False) -> None:
         """

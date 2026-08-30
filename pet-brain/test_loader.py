@@ -33,7 +33,8 @@ def test_plugin_loader():
     assert "HelloWorld" in plugins, "HelloWorld plugin should be loaded"
     assert "ClapReactor" in plugins, "ClapReactor plugin should be loaded"
     assert "HotkeyAction" in plugins, "HotkeyAction plugin should be loaded"
-    assert len(plugins) == 3, f"Expected 3 plugins, found {len(plugins)}"
+    assert "AICompanion" in plugins, "AICompanion plugin should be loaded"
+    assert len(plugins) >= 4, f"Expected at least 4 plugins, found {len(plugins)}"
 
     # 1. Test InputEvent routing (Hotkey global_action_x)
     hotkey_event = IncomingEvent(

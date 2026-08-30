@@ -7,17 +7,17 @@ class HotkeyActionPlugin(BasePlugin):
             name="HotkeyAction",
             version="1.0.0",
             description="Specific hotkey handler that triggers curious sprite state.",
-            subscriptions=["hotkey:global_action_x"],
+            subscriptions=["hotkey:dummy_test"],
         )
 
     def on_load(self, context: PluginContext) -> None:
         self.ctx = context
-        self.ctx.logger.info("HotkeyActionPlugin loaded and waiting for global_action_x.")
+        self.ctx.logger.info("HotkeyActionPlugin loaded.")
 
     def on_event(self, event: IncomingEvent) -> None:
-        if event.hotkey_id == "global_action_x":
-            self.ctx.logger.info("global_action_x received! Setting curious emotion.")
-            self.ctx.send_emotion("curious", priority=150)
+        if event.hotkey_id == "dummy_test":
+            self.ctx.logger.info("dummy_test received! Setting curious emotion.")
+            self.ctx.send_emotion("curious", priority=150, duration=3.0)
             self.ctx.send_speech("Curious what you're doing...")
 
     def on_unload(self) -> None:

@@ -7,6 +7,8 @@ import pet_pb2
 from core.ipc_server import IPCServer
 from core.base_plugin import PluginContext, IncomingEvent
 from core.plugin_loader import PluginLoader
+from core.ai_bridge import AIBridge
+from core.emotion_engine import EmotionEngine
 
 
 def setup_logging():
@@ -26,15 +28,36 @@ def main():
     ipc = IPCServer()
     ipc.start()
 
-    # 2. Build the shared Plugin Context
+    # 2. Initialize the Emotion Engine (16-state priority machine + decay timers)
+    emotion_engine = EmotionEngine(ipc_server=ipc, default_emotion="idle")
+
+    # 3. Initialize the AI Bridge (Ollama integration) and perform health-check
+    ai_bridge = AIBridge()
+    is_healthy, status_msg, available_models = ai_bridge.health_check()
+
+    if not is_healthy:
+        logger.warning(f"AI Service Notice: {status_msg}")
+        # Send warning speech bubble to shell so user is notified visually
+        warning_msg = pet_pb2.PetMessage()
+        warning_msg.speech_bubble.text = f"Ollama not running: {status_msg}"
+        warning_msg.speech_bubble.is_streaming_chunk = False
+        try:
+            ipc.send_message(warning_msg)
+        except Exception:
+            pass
+    else:
+        logger.info(f"AI Bridge ready! Available models: {available_models}")
+
+    # 4. Build the shared Plugin Context with EmotionEngine and AI access
     context = PluginContext(
         ipc=ipc,
-        ai=None,  # Will be populated in AI bridge phase
+        emotion_engine=emotion_engine,
+        ai=ai_bridge if is_healthy else None,
         config={},
         logger=logging.getLogger("PluginSystem"),
     )
 
-    # 3. Discover and load all plugins in pet-brain/plugins/
+    # 5. Discover and load all plugins in pet-brain/plugins/
     base_dir = os.path.dirname(os.path.abspath(__file__))
     plugins_dir = os.path.join(base_dir, "plugins")
     loader = PluginLoader(plugins_dir=plugins_dir, context=context)
@@ -46,7 +69,7 @@ def main():
 
     try:
         while True:
-            # 1. Calculate delta time for periodic plugin ticks
+            # 1. Calculate delta time for periodic plugin ticks & emotion decay
             current_time = time.time()
             dt = current_time - last_time
             last_time = current_time
@@ -86,8 +109,9 @@ def main():
                 # Dispatch to all subscribed plugins
                 loader.dispatch_event(incoming_event)
 
-            # 3. Fire periodic ticks for plugins requiring on_tick
+            # 3. Fire periodic ticks for plugins and emotion decay timers
             loader.tick(dt)
+            emotion_engine.tick(dt)
 
             # 4. Small sleep to avoid pegged CPU spin while remaining low-latency (10ms)
             time.sleep(0.01)
@@ -96,6 +120,7 @@ def main():
         logger.info("Shutdown requested. Cleaning up...")
     finally:
         loader.unload_all()
+        ai_bridge.shutdown()
         logger.info("Desktop Pet Brain shutdown complete.")
 
 

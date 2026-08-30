@@ -134,6 +134,7 @@ class PluginLoader:
             scoped_logger = logging.getLogger(f"Plugin:{plugin_name}")
             plugin_ctx = PluginContext(
                 ipc=self.context.ipc,
+                emotion_engine=self.context.emotion_engine,
                 ai=self.context.ai,
                 config=self.context.config.get(plugin_name, {}),
                 logger=scoped_logger,
