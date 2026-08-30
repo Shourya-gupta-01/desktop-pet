@@ -7,11 +7,12 @@ use window::PetWindow;
 
 fn main() -> eframe::Result<()> {
     // 1. Set up the IPC communication channel
-    let (tx, rx) = unbounded();
+    let (ipc_tx, ipc_rx) = unbounded(); // IPC thread -> UI thread
+    let (ui_tx, ui_rx) = unbounded();   // UI thread -> IPC thread
 
     // 2. Start the ZeroMQ background thread
     // This allows the Rust UI to start instantly even if Python is dead/loading
-    ipc::client::start_ipc_thread(tx);
+    ipc::client::start_ipc_thread(ipc_tx, ui_rx);
 
     // 3. Configure the transparent UI Window
     //    .with_app_id() sets the Wayland app_id so Hyprland can match windowrules against it.
@@ -34,6 +35,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Desktop Pet Shell",
         options,
-        Box::new(|_cc| Ok(Box::new(PetWindow::new(rx)))),
+        Box::new(|_cc| Ok(Box::new(PetWindow::new(ipc_rx, ui_tx)))),
     )
 }

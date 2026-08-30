@@ -1,9 +1,10 @@
 use eframe::egui;
 use std::path::Path;
-use crossbeam_channel::Receiver;
+use crossbeam_channel::{Receiver, Sender};
 use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::ipc::pet::PetMessage;
+use crate::ipc::pet::{PetMessage, InputEvent, pet_message::MessageType};
 
 /// Holds the raw PNG/JPG bytes of the current sprite.
 /// We load the texture lazily on the first frame, then cache the TextureHandle.
@@ -11,14 +12,16 @@ pub struct PetWindow {
     sprite_bytes: Option<Vec<u8>>,
     sprite_texture: Option<egui::TextureHandle>,
     ipc_rx: Receiver<PetMessage>,
+    ipc_tx: Sender<PetMessage>,
 }
 
 impl PetWindow {
-    pub fn new(ipc_rx: Receiver<PetMessage>) -> Self {
+    pub fn new(ipc_rx: Receiver<PetMessage>, ipc_tx: Sender<PetMessage>) -> Self {
         let mut window = Self {
             sprite_bytes: None,
             sprite_texture: None,
             ipc_rx,
+            ipc_tx,
         };
 
         // Load the initial static placeholder sprite
@@ -90,11 +93,34 @@ impl eframe::App for PetWindow {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Drain any incoming IPC messages (non-blocking)
-        while let Ok(_msg) = self.ipc_rx.try_recv() {
-            // In Phase 1 we just log them in the IPC thread, but here we would update state.
-            // Example: if msg is EmotionCommand, we might call self.set_sprite(new_path)
+        // --- PHASE 2 CHECKPOINT: SEND INPUT EVENT ---
+        // If the user presses Space while the window is focused, send an event to Python.
+        ctx.input(|i| {
+            if i.key_pressed(egui::Key::Space) {
+                let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+                let event = InputEvent {
+                    hotkey_id: "space_test".to_string(),
+                    timestamp,
+                };
+                let msg = PetMessage {
+                    message_type: Some(MessageType::InputEvent(event)),
+                };
+                if let Err(e) = self.ipc_tx.send(msg) {
+                    println!("[Window] Failed to send InputEvent: {}", e);
+                } else {
+                    println!("[Window] Sent InputEvent to Brain!");
+                }
+            }
+        });
 
+        // Drain any incoming IPC messages (non-blocking)
+        while let Ok(msg) = self.ipc_rx.try_recv() {
+            if let Some(MessageType::EmotionCommand(cmd)) = msg.message_type {
+                println!("[Window] Received EmotionCommand: {}", cmd.emotion_id);
+                // Dynamically change sprite based on emotion!
+                let path = format!("../assets/sprites/{}/placeholder.png", cmd.emotion_id);
+                self.set_sprite(&path);
+            }
             // Request a repaint so the window updates if state changed
             ctx.request_repaint();
         }
