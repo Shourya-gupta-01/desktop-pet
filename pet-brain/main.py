@@ -9,6 +9,7 @@ from core.base_plugin import PluginContext, IncomingEvent
 from core.plugin_loader import PluginLoader
 from core.ai_bridge import AIBridge
 from core.emotion_engine import EmotionEngine
+from core.stt_engine import STTEngine
 
 
 def setup_logging():
@@ -48,11 +49,20 @@ def main():
     else:
         logger.info(f"AI Bridge ready! Available models: {available_models}")
 
-    # 4. Build the shared Plugin Context with EmotionEngine and AI access
+    # 4. Initialize and pre-warm the Offline STT Engine (faster-whisper tiny.en)
+    stt_engine = STTEngine(model_size="tiny.en")
+    try:
+        stt_engine._ensure_model_loaded()
+        logger.info("STT Engine pre-warmed and ready for instant voice response!")
+    except Exception as e:
+        logger.warning(f"Could not pre-warm STT engine: {e}")
+
+    # 5. Build the shared Plugin Context with EmotionEngine, AI, and STT access
     context = PluginContext(
         ipc=ipc,
         emotion_engine=emotion_engine,
         ai=ai_bridge if is_healthy else None,
+        stt=stt_engine,
         config={},
         logger=logging.getLogger("PluginSystem"),
     )

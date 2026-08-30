@@ -133,13 +133,18 @@ impl eframe::App for PetWindow {
                 }
                 Some(MessageType::SpeechBubble(bubble)) => {
                     println!("[Window] Received SpeechBubble: {}", bubble.text);
-                    if bubble.is_streaming_chunk {
+                    let full_len = if bubble.is_streaming_chunk {
                         let text = self.speech_text.get_or_insert_with(String::new);
                         text.push_str(&bubble.text);
+                        text.len()
                     } else {
+                        let len = bubble.text.len();
                         self.speech_text = Some(bubble.text);
-                    }
-                    self.speech_expiry = Some(std::time::Instant::now() + std::time::Duration::from_secs(6));
+                        len
+                    };
+                    // Generous reading duration: at least 10s, scaling up with text length
+                    let reading_secs = 10.0 + (full_len as f32 / 12.0);
+                    self.speech_expiry = Some(std::time::Instant::now() + std::time::Duration::from_secs_f32(reading_secs.min(25.0)));
                 }
                 _ => {}
             }

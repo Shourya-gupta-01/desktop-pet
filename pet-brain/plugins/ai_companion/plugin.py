@@ -47,7 +47,7 @@ class AICompanionPlugin(BasePlugin):
                 text=prompt_text,
                 callback=on_complete,
                 on_token=on_token,
-                options={"num_predict": 35},
+                options=None,  # Unlimited token generation
             )
 
     def on_unload(self) -> None:

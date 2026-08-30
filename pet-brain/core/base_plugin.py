@@ -66,6 +66,7 @@ class PluginContext:
     ipc: Any  # IPCServer instance
     emotion_engine: Optional[Any] = None
     ai: Optional[Any] = None  # AIBridge instance (for LLM / Ollama interactions)
+    stt: Optional[Any] = None  # STTEngine instance (for Speech-to-Text)
     config: Dict[str, Any] = field(default_factory=dict)
     logger: logging.Logger = field(default_factory=lambda: logging.getLogger("Plugin"))
     state: Dict[str, Any] = field(default_factory=dict)

@@ -136,6 +136,7 @@ class PluginLoader:
                 ipc=self.context.ipc,
                 emotion_engine=self.context.emotion_engine,
                 ai=self.context.ai,
+                stt=self.context.stt,
                 config=self.context.config.get(plugin_name, {}),
                 logger=scoped_logger,
                 state=self.context.state.setdefault(plugin_name, {})

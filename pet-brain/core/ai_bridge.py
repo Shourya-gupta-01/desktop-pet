@@ -16,8 +16,8 @@ class AIBridge:
     def __init__(
         self,
         base_url: str = "http://localhost:11434",
-        text_model: str = "mistral:latest",
-        vision_model: str = "llava:latest",
+        text_model: str = "qwen2.5vl:7b",
+        vision_model: str = "qwen2.5vl:7b",
         max_workers: int = 4,
     ):
         self.base_url = base_url.rstrip("/")

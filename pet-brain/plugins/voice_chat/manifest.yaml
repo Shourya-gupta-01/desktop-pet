@@ -1,0 +1,9 @@
+name: VoiceChat
+version: 1.0.0
+description: Unified Super+Z push-to-talk, clap toggle, and multimodal vision & voice AI companion.
+subscriptions:
+  - hotkey:voice_press
+  - hotkey:voice_release
+  - audio_event
+  - hotkey:voice_action_z
+tick_interval: null
