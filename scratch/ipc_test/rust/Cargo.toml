@@ -1,0 +1,13 @@
+[package]
+name = "pet-shell"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bytes = "1.12.1"
+prost = "0.14.4"
+prost-types = "0.14.4"
+zmq = "0.10.0"
+
+[build-dependencies]
+prost-build = "0.14.4"

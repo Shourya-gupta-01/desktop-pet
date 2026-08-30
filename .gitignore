@@ -1,0 +1,47 @@
+# =========================
+# Rust / Cargo
+# =========================
+# Ignore build artifacts for all Cargo projects
+target/
+**/*/target/
+# Cargo.lock is typically committed for binary applications, but you can uncomment below to ignore it
+# Cargo.lock
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual Environments
+venv/
+.venv/
+env/
+.env/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# =========================
+# Desktop Pet Specific
+# =========================
+# User configuration containing personalized settings and potentially API keys if added later
+config/user_config.yaml
+
+# Local screenshot tests
+scratch/rust/capture_test/screenshot.png
+
+# Generated protobuf python files (optional, but usually good to ignore if generated at build time)
+# pet-brain/pet_pb2.py
+# pet-brain/pet_pb2_grpc.py
+
+# =========================
+# OS / Editor Files
+# =========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo

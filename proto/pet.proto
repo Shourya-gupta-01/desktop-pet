@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package pet;
+
+// Rust -> Python
+message InputEvent {
+    string hotkey_id = 1;
+    uint64 timestamp = 2; // milliseconds since epoch
+}
+
+// Rust -> Python
+message AudioEvent {
+    float amplitude = 1;
+    bool is_clap = 2;
+}
+
+// Rust -> Python (On Demand)
+message ScreenFrame {
+    bytes jpeg_bytes = 1;
+    uint32 width = 2;
+    uint32 height = 3;
+    uint64 timestamp = 4;
+}
+
+// Python -> Rust
+message EmotionCommand {
+    string emotion_id = 1;
+    int32 priority = 2;
+}
+
+// Python -> Rust
+message SpeechBubble {
+    string text = 1;
+    bool is_streaming_chunk = 2;
+}
+
+// Python -> Rust
+message PluginRegistered {
+    string plugin_name = 1;
+    repeated string capabilities = 2;
+}
+
+// Wrapper for all possible messages over the IPC channel
+message PetMessage {
+    oneof message_type {
+        InputEvent input_event = 1;
+        AudioEvent audio_event = 2;
+        ScreenFrame screen_frame = 3;
+        EmotionCommand emotion_command = 4;
+        SpeechBubble speech_bubble = 5;
+        PluginRegistered plugin_registered = 6;
+    }
+}
