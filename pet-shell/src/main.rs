@@ -1,51 +1,39 @@
-use prost::Message;
-use std::time::{SystemTime, UNIX_EPOCH, Instant};
-use zmq::Context;
+mod ipc;
+mod window;
 
-// Include the generated protobuf code
-pub mod pet {
-    include!(concat!(env!("OUT_DIR"), "/pet.rs"));
-}
+use crossbeam_channel::unbounded;
+use eframe::egui;
+use window::PetWindow;
 
-fn main() {
-    let context = Context::new();
-    let socket = context.socket(zmq::PAIR).unwrap();
-    println!("[Rust] Connecting to tcp://127.0.0.1:5555...");
-    socket.connect("tcp://127.0.0.1:5555").unwrap();
+fn main() -> eframe::Result<()> {
+    // 1. Set up the IPC communication channel
+    let (tx, rx) = unbounded();
 
-    let start_time = Instant::now();
+    // 2. Start the ZeroMQ background thread
+    // This allows the Rust UI to start instantly even if Python is dead/loading
+    ipc::client::start_ipc_thread(tx);
 
-    // 1. Create and send InputEvent
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64;
-
-    let input_event = pet::InputEvent {
-        hotkey_id: "ctrl+shift+a".to_string(),
-        timestamp,
+    // 3. Configure the transparent UI Window
+    //    .with_app_id() sets the Wayland app_id so Hyprland can match windowrules against it.
+    //    Without this, the class is empty and Hyprland treats it as a regular tiled window.
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_decorations(false)
+            .with_transparent(true)
+            .with_always_on_top()
+            .with_inner_size([200.0, 200.0])            // Compact size for the chibi sprite
+            .with_position(egui::pos2(1700.0, 850.0))   // Bottom-right corner (adjust to your resolution)
+            .with_mouse_passthrough(true)
+            .with_app_id("desktop-pet".to_string()),     // Wayland app_id for Hyprland rules
+        ..Default::default()
     };
 
-    let msg = pet::PetMessage {
-        message_type: Some(pet::pet_message::MessageType::InputEvent(input_event)),
-    };
+    println!("[Main] Starting pet-shell UI...");
 
-    let mut buf = Vec::new();
-    msg.encode(&mut buf).unwrap();
-
-    println!("[Rust] Sending InputEvent...");
-    socket.send(&buf, 0).unwrap();
-
-    // 2. Receive EmotionCommand
-    let reply_bytes = socket.recv_bytes(0).unwrap();
-    let reply = pet::PetMessage::decode(&reply_bytes[..]).unwrap();
-
-    if let Some(pet::pet_message::MessageType::EmotionCommand(emotion_cmd)) = reply.message_type {
-        println!("[Rust] Received EmotionCommand: {}, priority={}", emotion_cmd.emotion_id, emotion_cmd.priority);
-    } else {
-        println!("[Rust] Received unexpected message!");
-    }
-
-    let elapsed = start_time.elapsed();
-    println!("[Rust] Turnaround time (including Rust encode/decode): {:.2?} ms", elapsed.as_secs_f64() * 1000.0);
+    // 4. Run the app
+    eframe::run_native(
+        "Desktop Pet Shell",
+        options,
+        Box::new(|_cc| Ok(Box::new(PetWindow::new(rx)))),
+    )
 }
