@@ -1,0 +1,6 @@
+name: ClapReactor
+version: 1.0.0
+author: DesktopPetTeam
+description: Listens for acoustic claps and triggers startled reactions.
+subscriptions:
+  - audio_event

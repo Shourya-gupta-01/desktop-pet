@@ -1,51 +1,103 @@
+import os
+import sys
 import time
+import logging
+
 import pet_pb2
 from core.ipc_server import IPCServer
+from core.base_plugin import PluginContext, IncomingEvent
+from core.plugin_loader import PluginLoader
+
+
+def setup_logging():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
 
 def main():
-    print("Starting Desktop Pet Brain...")
-    
-    # Initialize and bind the ZeroMQ server
+    setup_logging()
+    logger = logging.getLogger("Brain")
+    logger.info("Initializing Desktop Pet Brain...")
+
+    # 1. Start the IPC Server (ZeroMQ PAIR socket)
     ipc = IPCServer()
     ipc.start()
-    
-    print("Brain is active. Waiting for events from the Shell...")
-    
+
+    # 2. Build the shared Plugin Context
+    context = PluginContext(
+        ipc=ipc,
+        ai=None,  # Will be populated in AI bridge phase
+        config={},
+        logger=logging.getLogger("PluginSystem"),
+    )
+
+    # 3. Discover and load all plugins in pet-brain/plugins/
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    plugins_dir = os.path.join(base_dir, "plugins")
+    loader = PluginLoader(plugins_dir=plugins_dir, context=context)
+    loader.discover_and_load()
+
+    logger.info("Desktop Pet Brain is active and routing events!")
+
+    last_time = time.time()
+
     try:
         while True:
-            # Poll for incoming messages (blocking so we don't chew CPU)
-            # In Phase 2 we just block. Later we'll use non-blocking with async plugins.
-            msg = ipc.receive_message(blocking=True)
-            
+            # 1. Calculate delta time for periodic plugin ticks
+            current_time = time.time()
+            dt = current_time - last_time
+            last_time = current_time
+
+            # 2. Non-blocking IPC message polling
+            msg = ipc.receive_message(blocking=False)
             if msg:
-                # Which field inside the 'oneof' is populated?
                 msg_type = msg.WhichOneof("message_type")
-                print(f"[Brain] Received: {msg_type}")
                 
+                # Normalize raw Protobuf into a typed IncomingEvent
+                event_data = {}
                 if msg_type == "input_event":
-                    event = msg.input_event
-                    print(f"        -> Hotkey: {event.hotkey_id}")
-                    
-                    # When we receive a global hotkey event, reply with "curious"
-                    print("[Brain] Sending EmotionCommand('curious') response...")
-                    response = pet_pb2.PetMessage()
-                    response.emotion_command.emotion_id = "curious"
-                    response.emotion_command.priority = 100
-                    ipc.send_message(response)
-                    
+                    event_data = {
+                        "hotkey_id": msg.input_event.hotkey_id,
+                        "timestamp": msg.input_event.timestamp,
+                    }
                 elif msg_type == "audio_event":
-                    event = msg.audio_event
-                    print(f"        -> Audio Event (Clap: {event.is_clap}, Amplitude: {event.amplitude:.3f})")
-                    
-                    if event.is_clap:
-                        print("[Brain] Sending EmotionCommand('startled') response...")
-                        response = pet_pb2.PetMessage()
-                        response.emotion_command.emotion_id = "startled"
-                        response.emotion_command.priority = 200
-                        ipc.send_message(response)
-                    
+                    event_data = {
+                        "amplitude": msg.audio_event.amplitude,
+                        "is_clap": msg.audio_event.is_clap,
+                    }
+                elif msg_type == "screen_frame":
+                    event_data = {
+                        "jpeg_bytes": msg.screen_frame.jpeg_bytes,
+                        "width": msg.screen_frame.width,
+                        "height": msg.screen_frame.height,
+                        "timestamp": msg.screen_frame.timestamp,
+                    }
+
+                incoming_event = IncomingEvent(
+                    event_type=msg_type or "unknown",
+                    raw_message=msg,
+                    data=event_data,
+                    timestamp=time.time(),
+                )
+
+                # Dispatch to all subscribed plugins
+                loader.dispatch_event(incoming_event)
+
+            # 3. Fire periodic ticks for plugins requiring on_tick
+            loader.tick(dt)
+
+            # 4. Small sleep to avoid pegged CPU spin while remaining low-latency (10ms)
+            time.sleep(0.01)
+
     except KeyboardInterrupt:
-        print("\nShutting down Brain...")
+        logger.info("Shutdown requested. Cleaning up...")
+    finally:
+        loader.unload_all()
+        logger.info("Desktop Pet Brain shutdown complete.")
+
 
 if __name__ == "__main__":
     main()

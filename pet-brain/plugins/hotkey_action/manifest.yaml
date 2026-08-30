@@ -1,0 +1,6 @@
+name: HotkeyAction
+version: 1.0.0
+author: DesktopPetTeam
+description: Specific hotkey handler that triggers curious sprite state.
+subscriptions:
+  - "hotkey:global_action_x"
