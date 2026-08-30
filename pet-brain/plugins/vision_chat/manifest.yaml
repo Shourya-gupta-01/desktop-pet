@@ -1,0 +1,6 @@
+name: VisionChat
+version: 1.0.0
+description: Captures desktop screen and prompts local LLaVA for visual observations.
+subscriptions:
+  - hotkey:vision_action_v
+tick_interval: null

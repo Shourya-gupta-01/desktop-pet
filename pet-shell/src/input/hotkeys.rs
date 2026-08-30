@@ -20,8 +20,15 @@ pub fn start_hotkey_listener(tx: Sender<PetMessage>) {
         let mut buf = [0; 64];
 
         loop {
-            if let Ok(_) = socket.recv_from(&mut buf) {
-                println!("[Hotkeys] Received trigger via UDP!");
+            if let Ok((amt, _src)) = socket.recv_from(&mut buf) {
+                let payload = String::from_utf8_lossy(&buf[..amt]).trim().to_string();
+                let hotkey_id = if payload.is_empty() || payload == "trigger" {
+                    "global_action_x".to_string()
+                } else {
+                    payload
+                };
+
+                println!("[Hotkeys] Received trigger via UDP: '{}'", hotkey_id);
 
                 let timestamp = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
@@ -30,7 +37,7 @@ pub fn start_hotkey_listener(tx: Sender<PetMessage>) {
 
                 let msg = PetMessage {
                     message_type: Some(MessageType::InputEvent(InputEvent {
-                        hotkey_id: "global_action_x".to_string(),
+                        hotkey_id,
                         timestamp,
                     })),
                 };
