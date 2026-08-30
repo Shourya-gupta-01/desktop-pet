@@ -1,5 +1,6 @@
 mod ipc;
 mod window;
+mod input;
 
 use crossbeam_channel::unbounded;
 use eframe::egui;
@@ -10,7 +11,11 @@ fn main() -> eframe::Result<()> {
     let (ipc_tx, ipc_rx) = unbounded(); // IPC thread -> UI thread
     let (ui_tx, ui_rx) = unbounded();   // UI thread -> IPC thread
 
-    // 2. Start the ZeroMQ background thread
+    // 2. Start the background sensor threads (Input & Audio)
+    input::hotkeys::start_hotkey_listener(ui_tx.clone());
+    input::audio::start_audio_listener(ui_tx.clone());
+
+    // 3. Start the ZeroMQ background thread
     // This allows the Rust UI to start instantly even if Python is dead/loading
     ipc::client::start_ipc_thread(ipc_tx, ui_rx);
 

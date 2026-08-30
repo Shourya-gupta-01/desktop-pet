@@ -26,14 +26,23 @@ def main():
                     event = msg.input_event
                     print(f"        -> Hotkey: {event.hotkey_id}")
                     
-                    # Whenever we receive any input event, send back a "happy" emotion command
-                    # This proves the end-to-end bidirectional IPC loop works.
-                    print("[Brain] Sending EmotionCommand('happy') response...")
+                    # When we receive a global hotkey event, reply with "curious"
+                    print("[Brain] Sending EmotionCommand('curious') response...")
                     response = pet_pb2.PetMessage()
-                    response.emotion_command.emotion_id = "happy"
+                    response.emotion_command.emotion_id = "curious"
                     response.emotion_command.priority = 100
-                    
                     ipc.send_message(response)
+                    
+                elif msg_type == "audio_event":
+                    event = msg.audio_event
+                    print(f"        -> Audio Event (Clap: {event.is_clap}, Amplitude: {event.amplitude:.3f})")
+                    
+                    if event.is_clap:
+                        print("[Brain] Sending EmotionCommand('startled') response...")
+                        response = pet_pb2.PetMessage()
+                        response.emotion_command.emotion_id = "startled"
+                        response.emotion_command.priority = 200
+                        ipc.send_message(response)
                     
     except KeyboardInterrupt:
         print("\nShutting down Brain...")

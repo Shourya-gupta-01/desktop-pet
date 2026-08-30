@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 bytes = "1.12.1"
+cpal = "0.15.2"
 crossbeam-channel = "0.5.11"
 eframe = "0.28.1"
 egui_extras = { version = "0.28.1", features = ["image"] }
