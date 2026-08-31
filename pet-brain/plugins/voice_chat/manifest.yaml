@@ -6,4 +6,6 @@ subscriptions:
   - hotkey:voice_release
   - audio_event
   - hotkey:voice_action_z
+  - hotkey:toggle_ai
+  - ai_toggle
 tick_interval: null

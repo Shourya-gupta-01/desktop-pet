@@ -99,12 +99,20 @@ class VoiceChatPlugin(BasePlugin):
             self.ctx.send_speech("Thinking...")
 
             if not self.ctx.stt:
+                self.ctx.send_speech("Voice recognition offline.")
                 self.is_processing = False
                 return
 
             self.ctx.stt.stop_push_to_talk(callback=self._handle_transcribed_text)
 
-        # 4. Fallback Tap Mode (Ctrl+Alt+Shift+Z)
+        # 4. Instant 1-Click / Hotkey AI Backend Toggle (Local <-> Gemini)
+        elif hotkey == "toggle_ai" or event.event_type == "ai_toggle":
+            backend, msg = self.ctx.ai.toggle_backend()
+            self.ctx.logger.info(f"AI Backend toggled to: {backend}")
+            self.ctx.send_emotion("excited" if backend == "gemini" else "happy", priority=150, duration=8.0)
+            self.ctx.send_speech(msg)
+
+        # 5. Fallback Single-Trigger (voice_action_z)
         elif hotkey == "voice_action_z":
             if self.is_processing or self.is_recording:
                 return
@@ -194,19 +202,61 @@ class VoiceChatPlugin(BasePlugin):
 
         text_lower = text.lower()
 
-        # Keywords for camera/webcam vision (looking at the human, face, room, clothing, specs)
+        # 0. OS Navigation / System Control Fast-Path
+        # Check for instant AI backend switching commands (Gemini vs Local)
+        if any(w in text_lower for w in ["switch to gemini", "use gemini", "enable gemini", "switch to cloud"]):
+            success, msg = self.ctx.ai.set_backend("gemini")
+            self.ctx.send_emotion("excited" if success else "confused", priority=140, duration=8.0)
+            self.ctx.send_speech(msg)
+            self.is_processing = False
+            self.is_recording = False
+            return
+
+        if any(w in text_lower for w in ["switch to local", "use local", "use ollama", "use qwen", "go offline", "switch to offline"]):
+            success, msg = self.ctx.ai.set_backend("local")
+            self.ctx.send_emotion("happy", priority=140, duration=8.0)
+            self.ctx.send_speech(msg)
+            self.is_processing = False
+            self.is_recording = False
+            return
+
+        if any(w in text_lower for w in ["switch ai backend", "toggle ai backend", "toggle ai", "switch backend"]):
+            _, msg = self.ctx.ai.toggle_backend()
+            self.ctx.send_emotion("excited", priority=140, duration=8.0)
+            self.ctx.send_speech(msg)
+            self.is_processing = False
+            self.is_recording = False
+            return
+
+        # Fast-Path: Check for native OS Navigation, Browser, Command, & Telemetry actions
+        try:
+            from plugins.os_navigation.plugin import OSNavigationPlugin
+            os_nav = OSNavigationPlugin()
+            os_nav.ctx = self.ctx
+            handled, reply, emotion = os_nav.handle_query(text)
+            if handled:
+                self.ctx.logger.info(f"OS Navigation handled query '{text}': {reply}")
+                self.ctx.send_emotion(emotion, priority=140, duration=10.0)
+                self.ctx.send_speech(reply)
+                self.is_processing = False
+                self.is_recording = False
+                return
+        except Exception as os_err:
+            self.ctx.logger.debug(f"OS nav check skipped: {os_err}")
+
+        # Keywords for camera/webcam vision (looking at the human, face, clothing, specs)
         camera_keywords = [
             "camera", "webcam", "face", "look at me", "see me", "wearing", "glasses",
-            "specs", "spectacles", "hair", "holding", "room", "shirt", "my view",
+            "specs", "spectacles", "hair", "holding", "my room", "shirt", "my view",
             "behind me", "am i", "my expression", "who am i", "looking at me", "how do i look"
         ]
 
-        # Keywords for desktop screen vision (code, IDE, terminals, windows, web pages, folders)
+        # Keywords for desktop screen vision (specifically asking to inspect/read the screen)
         screen_keywords = [
-            "screen", "code", "window", "terminal", "desktop", "tab", "browser",
-            "read", "monitor", "file", "error", "on my screen", "app", "ui", "battery",
-            "folder", "directory", "project", "editor", "path", "open", "display",
-            "what is this", "what's this", "look at this", "describe"
+            "screen", "on my screen", "read my screen", "read the screen", "look at my screen",
+            "look at screen", "describe my screen", "describe the screen", "explain this code",
+            "read this code", "look at the code", "what's on my desktop", "what is on my desktop",
+            "what's this", "what is this", "look at this", "read what is on", "tell me what is on"
         ]
 
         is_camera_query = any(k in text_lower for k in camera_keywords)
@@ -229,14 +279,24 @@ class VoiceChatPlugin(BasePlugin):
             self.is_processing = False
             self.is_recording = False
 
+        ZORO_PERSONA = (
+            "You are Roronoa Zoro, the Pirate Hunter and master swordsman of the Straw Hat Pirates from One Piece. "
+            "You are stoic, tough, loyal, blunt, and confident, addressing the user as Captain, Oi, or Nakama. "
+            "You have an awful sense of direction (often confusing North and South), love napping, training with massive weights, drinking sake, and slicing obstacles with your three swords. "
+            "Give a concise, badass, in-character response in 1 or 2 punchy sentences. Never break character."
+        )
+
         # 1. Webcam Vision Path
         if is_camera_query:
             self.ctx.logger.info("Webcam visual query detected! Capturing camera frame...")
+            self.ctx.send_speech("Looking at you... 👁️")
+            self.ctx.send_emotion("curious", priority=150, duration=60.0)
             image_bytes = self._capture_webcam()
             if image_bytes:
                 vision_prompt = (
-                    f"The user asked while in front of their webcam: '{text}'. "
-                    "You are a friendly, witty chibi anime companion. Look through their camera and give a complete, helpful, natural answer in 1 or 2 sentences."
+                    f"The user asked while in front of their webcam: '{text}'.\n"
+                    f"Persona: {ZORO_PERSONA}\n"
+                    "Look through their camera, observe the visual scene, and give a sharp, in-character answer in 1 or 2 sentences."
                 )
                 self.ctx.ai.prompt_vision_async(
                     prompt=vision_prompt,
@@ -251,11 +311,14 @@ class VoiceChatPlugin(BasePlugin):
         # 2. Desktop Screen Vision Path
         if is_screen_query:
             self.ctx.logger.info("Screen visual query detected! Capturing desktop frame...")
+            self.ctx.send_speech("Reading screen... 🔍")
+            self.ctx.send_emotion("curious", priority=150, duration=60.0)
             image_bytes = self._capture_screen()
             if image_bytes:
                 vision_prompt = (
-                    f"The user asked while looking at their desktop screen: '{text}'. "
-                    "You are a friendly, witty chibi anime companion. Look at their screen and give a complete, helpful, natural answer in 1 or 2 sentences."
+                    f"The user asked while looking at their desktop screen: '{text}'.\n"
+                    f"Persona: {ZORO_PERSONA}\n"
+                    "Look at their screen, analyze the open windows, code, or applications, and give an accurate, in-character answer in 1 or 2 sentences."
                 )
                 self.ctx.ai.prompt_vision_async(
                     prompt=vision_prompt,
@@ -267,10 +330,11 @@ class VoiceChatPlugin(BasePlugin):
             else:
                 self.ctx.logger.warning("Screen capture unavailable, falling back to text prompt.")
 
-        # 3. General Conversational / Chat Path (Qwen2.5-VL 7B text mode)
+        # 3. General Conversational / Chat Path (Zoro persona)
         prompt_text = (
-            f"The user said: '{text}'. "
-            "You are a friendly, cute chibi anime companion. Give a complete, lively, natural answer in 1 or 2 sentences."
+            f"The user said: '{text}'.\n"
+            f"Persona: {ZORO_PERSONA}\n"
+            "Give a complete, in-character response in 1 or 2 sentences."
         )
 
         self.ctx.ai.prompt_async(

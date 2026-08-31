@@ -15,13 +15,12 @@ __pycache__/
 *$py.class
 *.so
 
-# Virtual Environments
-venv/
-.venv/
-env/
-.env/
-pip-log.txt
-pip-delete-this-directory.txt
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+*.env
+!.env.example
 
 # =========================
 # Desktop Pet Specific

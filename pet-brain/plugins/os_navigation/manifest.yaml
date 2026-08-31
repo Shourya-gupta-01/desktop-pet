@@ -1,0 +1,9 @@
+name: OSNavigation
+version: 1.0.0
+description: Native OS navigation, application launcher, media/volume controller, and hardware telemetry provider.
+subscriptions:
+  - hotkey:os_action
+  - os_command
+capabilities:
+  - process_spawn
+  - system_info

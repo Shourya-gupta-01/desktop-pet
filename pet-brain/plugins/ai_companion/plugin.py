@@ -26,7 +26,7 @@ class AICompanionPlugin(BasePlugin):
                 self.ctx.send_speech("Ollama is offline! Please start Ollama.")
                 return
 
-            prompt_text = "You are a cheerful chibi anime desktop companion. Say a quick, funny, one-sentence greeting to your human friend!"
+            prompt_text = "You are Roronoa Zoro from One Piece. Give a quick, badass, one-sentence greeting to your Captain or Nakama (maybe mention your swords, training, or getting lost)!"
 
             first_token = [True]
 

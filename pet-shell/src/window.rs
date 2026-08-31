@@ -31,23 +31,62 @@ impl PetWindow {
         };
 
         // Load the initial static placeholder sprite
-        window.set_sprite("../assets/sprites/idle/placeholder.png");
+        let initial_sprite = Self::resolve_sprite("idle").unwrap_or_else(|| "../assets/sprites/idle/placeholder.png".to_string());
+        window.set_sprite(&initial_sprite);
         window
+    }
+
+    /// Resolve an emotion identifier to an existing sprite image path.
+    pub fn resolve_sprite(emotion: &str) -> Option<String> {
+        let emotion_clean = emotion.trim().to_lowercase();
+        let mut candidates = vec![emotion_clean.clone()];
+        if emotion_clean == "bored" {
+            candidates.push("boredom".to_string());
+        } else if emotion_clean == "boredom" {
+            candidates.push("bored".to_string());
+        }
+
+        let file_names = ["placeholder.png", "pasted file.png", "sprite.png", "placeholder.jpg", "sprite.jpg"];
+
+        for emo in &candidates {
+            for fname in &file_names {
+                let candidate_path = format!("../assets/sprites/{}/{}", emo, fname);
+                if Path::new(&candidate_path).exists() {
+                    return Some(candidate_path);
+                }
+            }
+        }
+
+        // Fallback to idle
+        for fname in &file_names {
+            let fallback_path = format!("../assets/sprites/idle/{}", fname);
+            if Path::new(&fallback_path).exists() {
+                return Some(fallback_path);
+            }
+        }
+
+        None
     }
 
     /// Read a sprite image from disk and store the raw bytes.
     /// The texture will be created on the next frame (we need an egui Context for that).
     pub fn set_sprite(&mut self, path: &str) {
-        if Path::new(path).exists() {
-            match fs::read(path) {
+        let resolved = if Path::new(path).exists() {
+            Some(path.to_string())
+        } else {
+            Self::resolve_sprite(path)
+        };
+
+        if let Some(valid_path) = resolved {
+            match fs::read(&valid_path) {
                 Ok(data) => {
                     self.sprite_bytes = Some(data);
                     // Invalidate the old cached texture so it gets re-created next frame
                     self.sprite_texture = None;
-                    println!("[Window] Loaded sprite from: {}", path);
+                    println!("[Window] Loaded sprite from: {}", valid_path);
                 }
                 Err(e) => {
-                    println!("[Window] Error reading sprite file {}: {}", path, e);
+                    println!("[Window] Error reading sprite file {}: {}", valid_path, e);
                 }
             }
         } else {
@@ -128,8 +167,7 @@ impl eframe::App for PetWindow {
             match msg.message_type {
                 Some(MessageType::EmotionCommand(cmd)) => {
                     println!("[Window] Received EmotionCommand: {}", cmd.emotion_id);
-                    let path = format!("../assets/sprites/{}/placeholder.png", cmd.emotion_id);
-                    self.set_sprite(&path);
+                    self.set_sprite(&cmd.emotion_id);
                 }
                 Some(MessageType::SpeechBubble(bubble)) => {
                     println!("[Window] Received SpeechBubble: {}", bubble.text);
@@ -191,12 +229,12 @@ impl eframe::App for PetWindow {
                     ui.put(
                         sprite_rect,
                         egui::Image::new(texture)
-                            .tint(egui::Color32::from_rgba_unmultiplied(255, 255, 255, 242)),
+                            .tint(egui::Color32::from_rgba_unmultiplied(255, 255, 255, 190)),
                     );
                 }
 
                 // 2. Speech Bubble: positioned RIGHT NEXT to the pet (not far away)
-                //    Bubble sits immediately to the left of the pet sprite in the bottom-right corner
+                //    Translucent frosted glass styling so background content is visible
                 if let Some(speech) = &self.speech_text {
                     let bubble_width = 380.0_f32;          // Fixed readable width
                     let bubble_right = pet_x - 15.0;       // 15px gap between bubble and pet
@@ -212,8 +250,8 @@ impl eframe::App for PetWindow {
                     ui.allocate_ui_at_rect(bubble_area, |ui| {
                         ui.with_layout(egui::Layout::centered_and_justified(egui::Direction::TopDown), |ui| {
                             egui::Frame::none()
-                                .fill(egui::Color32::from_rgba_unmultiplied(16, 16, 24, 245))
-                                .stroke(egui::Stroke::new(1.5_f32, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 160)))
+                                .fill(egui::Color32::from_rgba_unmultiplied(14, 16, 26, 130))
+                                .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 110)))
                                 .rounding(14.0)
                                 .inner_margin(egui::Margin::symmetric(16.0, 12.0))
                                 .show(ui, |ui| {
