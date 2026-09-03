@@ -65,6 +65,14 @@ impl PetWindow {
             asset_roots.push(std::path::PathBuf::from(home).join(".local/share/desktop-pet/assets/sprites"));
         }
 
+        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            asset_roots.push(std::path::PathBuf::from(local_app_data).join("desktop-pet/assets/sprites"));
+        }
+
+        if let Ok(app_data) = std::env::var("APPDATA") {
+            asset_roots.push(std::path::PathBuf::from(app_data).join("desktop-pet/assets/sprites"));
+        }
+
         asset_roots.push(std::path::PathBuf::from("assets/sprites"));
         asset_roots.push(std::path::PathBuf::from("../assets/sprites"));
 

@@ -167,17 +167,20 @@ class VoiceChatPlugin(BasePlugin):
             return None
 
     def _capture_screen(self) -> Optional[bytes]:
-        """Capture the current Wayland desktop screen and resize to 720p (1280x720) in volatile RAM."""
-        try:
-            capture = subprocess.run(
-                ["grim", "-t", "jpeg", "-q", "80", "-"],
-                capture_output=True,
-                timeout=5.0,
-            )
-            if capture.returncode == 0 and capture.stdout:
-                try:
-                    from PIL import Image
-                    import io
+        """Capture the current desktop screen and resize to 720p (1280x720) in volatile RAM (cross-platform)."""
+        import io
+        import sys
+        from PIL import Image
+
+        # 1. On Linux Wayland with grim available, use grim
+        if sys.platform != "win32" and shutil.which("grim"):
+            try:
+                capture = subprocess.run(
+                    ["grim", "-t", "jpeg", "-q", "80", "-"],
+                    capture_output=True,
+                    timeout=5.0,
+                )
+                if capture.returncode == 0 and capture.stdout:
                     img = Image.open(io.BytesIO(capture.stdout))
                     w, h = img.size
                     target_h = 720
@@ -186,13 +189,27 @@ class VoiceChatPlugin(BasePlugin):
                     out_buf = io.BytesIO()
                     img_720p.save(out_buf, format="JPEG", quality=85)
                     return out_buf.getvalue()
-                except Exception as resize_err:
-                    self.ctx.logger.debug(f"Pillow 720p resize fallback: {resize_err}")
-                    return capture.stdout
-            return None
+            except Exception as e:
+                self.ctx.logger.debug(f"grim capture failed, trying ImageGrab: {e}")
+
+        # 2. Windows / X11 / Universal Fallback via PIL.ImageGrab
+        try:
+            from PIL import ImageGrab
+            img = ImageGrab.grab()
+            if img:
+                w, h = img.size
+                target_h = 720
+                target_w = int((w / h) * target_h)
+                img_720p = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                if img_720p.mode in ("RGBA", "P"):
+                    img_720p = img_720p.convert("RGB")
+                out_buf = io.BytesIO()
+                img_720p.save(out_buf, format="JPEG", quality=85)
+                return out_buf.getvalue()
         except Exception as e:
-            self.ctx.logger.warning(f"Screen capture failed: {e}")
-            return None
+            self.ctx.logger.warning(f"Universal screen capture failed: {e}")
+
+        return None
 
     def _handle_transcribed_text(self, text: str):
         if not text or len(text.strip()) == 0:

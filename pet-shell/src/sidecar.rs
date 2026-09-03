@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-/// Supervises the Python Brain sidecar process.
+/// Supervises the Python Brain sidecar process (cross-platform for Linux & Windows).
 /// Automatically starts it, monitors its health, and restarts it if it crashes.
 pub struct SidecarSupervisor {
     running: Arc<AtomicBool>,
@@ -41,7 +41,6 @@ impl SidecarSupervisor {
                                     break; // Break to restart loop
                                 }
                                 Ok(None) => {
-                                    // Child is still alive, sleep briefly
                                     thread::sleep(Duration::from_millis(500));
                                 }
                                 Err(e) => {
@@ -86,45 +85,68 @@ impl SidecarSupervisor {
     fn locate_brain_target() -> std::io::Result<(String, Vec<String>, Option<PathBuf>)> {
         // 1. Check explicit environment override
         if let Ok(env_bin) = env::var("DESKTOP_PET_BRAIN_BIN") {
-            let p = PathBuf::from(env_bin);
+            let p = PathBuf::from(&env_bin);
             if p.exists() {
                 let parent = p.parent().map(|p| p.to_path_buf());
                 return Ok((p.to_string_lossy().to_string(), vec![], parent));
             }
         }
 
-        // 2. Check binary next to current executable (e.g. installed in ~/.local/share/desktop-pet/bin/)
+        // 2. Check executable directory (Linux & Windows)
         if let Ok(exe_path) = env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
                 let candidates = [
                     exe_dir.join("pet-brain"),
+                    exe_dir.join("pet-brain.exe"),
                     exe_dir.join("pet-brain.sh"),
+                    exe_dir.join("pet-brain.bat"),
                     exe_dir.join("../pet-brain/pet-brain"),
+                    exe_dir.join("../pet-brain/pet-brain.exe"),
                     exe_dir.join("../bin/pet-brain"),
+                    exe_dir.join("../bin/pet-brain.exe"),
+                    exe_dir.join("pet-brain/main.py"),
+                    exe_dir.join("../pet-brain/main.py"),
                 ];
 
                 for candidate in candidates {
                     if candidate.exists() {
-                        let parent = candidate.parent().map(|p| p.to_path_buf());
-                        return Ok((candidate.to_string_lossy().to_string(), vec![], parent));
+                        if candidate.extension().map_or(false, |ext| ext == "py") {
+                            let python_bin = Self::find_python_interpreter(candidate.parent().unwrap());
+                            let parent = candidate.parent().map(|p| p.to_path_buf());
+                            return Ok((python_bin, vec![candidate.to_string_lossy().to_string()], parent));
+                        } else {
+                            let parent = candidate.parent().map(|p| p.to_path_buf());
+                            return Ok((candidate.to_string_lossy().to_string(), vec![], parent));
+                        }
                     }
                 }
             }
         }
 
-        // 3. Check ~/.local/share/desktop-pet/
+        // 3. Check Windows LocalAppData & Linux Home directories
+        let mut base_dirs = Vec::new();
+        if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
+            base_dirs.push(PathBuf::from(local_app_data).join("desktop-pet"));
+        }
+        if let Ok(app_data) = env::var("APPDATA") {
+            base_dirs.push(PathBuf::from(app_data).join("desktop-pet"));
+        }
         if let Ok(home) = env::var("HOME") {
-            let installed_dir = PathBuf::from(&home).join(".local/share/desktop-pet");
+            base_dirs.push(PathBuf::from(home).join(".local/share/desktop-pet"));
+        }
+
+        for installed_dir in base_dirs {
             let candidates = [
                 installed_dir.join("bin/pet-brain"),
+                installed_dir.join("bin/pet-brain.exe"),
                 installed_dir.join("pet-brain"),
+                installed_dir.join("pet-brain.exe"),
                 installed_dir.join("pet-brain/main.py"),
             ];
 
             for candidate in candidates {
                 if candidate.exists() {
                     if candidate.extension().map_or(false, |ext| ext == "py") {
-                        // Launch via python
                         let python_bin = Self::find_python_interpreter(&installed_dir);
                         return Ok((python_bin, vec![candidate.to_string_lossy().to_string()], Some(installed_dir)));
                     } else {
@@ -159,11 +181,14 @@ impl SidecarSupervisor {
     }
 
     fn find_python_interpreter(base_dir: &Path) -> String {
-        // Check for venv inside or near the directory
+        // Check for venv (Linux & Windows)
         let venv_candidates = [
             base_dir.join(".venv/bin/python"),
+            base_dir.join(".venv/Scripts/python.exe"),
             base_dir.join("venv/bin/python"),
+            base_dir.join("venv/Scripts/python.exe"),
             base_dir.join("../.venv/bin/python"),
+            base_dir.join("../.venv/Scripts/python.exe"),
         ];
 
         for venv in venv_candidates {
@@ -174,14 +199,21 @@ impl SidecarSupervisor {
 
         // Check conda env if active
         if let Ok(conda_prefix) = env::var("CONDA_PREFIX") {
-            let conda_python = PathBuf::from(conda_prefix).join("bin/python");
-            if conda_python.exists() {
-                return conda_python.to_string_lossy().to_string();
+            let conda_py_unix = PathBuf::from(&conda_prefix).join("bin/python");
+            let conda_py_win = PathBuf::from(&conda_prefix).join("python.exe");
+            if conda_py_unix.exists() {
+                return conda_py_unix.to_string_lossy().to_string();
+            }
+            if conda_py_win.exists() {
+                return conda_py_win.to_string_lossy().to_string();
             }
         }
 
-        // Default to system python3
-        "python3".to_string()
+        if cfg!(target_os = "windows") {
+            "python.exe".to_string()
+        } else {
+            "python3".to_string()
+        }
     }
 }
 

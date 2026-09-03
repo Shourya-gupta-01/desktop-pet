@@ -70,6 +70,61 @@ class OSNavigationPlugin(BasePlugin):
             tick_interval=None,
         )
 
+    def _index_windows_applications(self) -> None:
+        """Index Windows Start Menu programs and standard Win32 applications."""
+        win_builtins = {
+            "notepad": "notepad.exe",
+            "calculator": "calc.exe",
+            "calc": "calc.exe",
+            "explorer": "explorer.exe",
+            "file manager": "explorer.exe",
+            "files": "explorer.exe",
+            "task manager": "taskmgr.exe",
+            "taskmgr": "taskmgr.exe",
+            "cmd": "cmd.exe",
+            "powershell": "powershell.exe",
+            "terminal": "wt.exe",
+            "windows terminal": "wt.exe",
+            "paint": "mspaint.exe",
+            "settings": "ms-settings:",
+            "chrome": "chrome.exe",
+            "google chrome": "chrome.exe",
+            "edge": "msedge.exe",
+            "microsoft edge": "msedge.exe",
+            "spotify": "spotify.exe",
+            "discord": "discord.exe",
+            "steam": "steam.exe",
+            "vscode": "code.exe",
+            "code": "code.exe",
+        }
+        for name, cmd in win_builtins.items():
+            self.app_index[name] = {
+                "display_name": name.capitalize(),
+                "exec_cmd": cmd,
+                "desktop_id": name,
+                "is_terminal": False,
+                "is_windows": True,
+            }
+
+        start_menu_dirs = [
+            os.path.expandvars(r"%ProgramData%\Microsoft\Windows\Start Menu\Programs"),
+            os.path.expandvars(r"%APPDATA%\Microsoft\Windows\Start Menu\Programs"),
+        ]
+        for sm_dir in start_menu_dirs:
+            if os.path.exists(sm_dir):
+                for root, _, files in os.walk(sm_dir):
+                    for f in files:
+                        if f.lower().endswith((".lnk", ".url", ".exe")):
+                            app_name = os.path.splitext(f)[0].lower()
+                            full_p = os.path.join(root, f)
+                            self.app_index[app_name] = {
+                                "display_name": os.path.splitext(f)[0],
+                                "exec_cmd": full_p,
+                                "desktop_id": app_name,
+                                "is_terminal": False,
+                                "is_windows": True,
+                            }
+
     def on_load(self, context: PluginContext) -> None:
         self.ctx = context
         self.app_index: Dict[str, Dict[str, Any]] = {}
@@ -77,7 +132,11 @@ class OSNavigationPlugin(BasePlugin):
         self.ctx.logger.info(f"OSNavigationPlugin loaded! Indexed {len(self.app_index)} native desktop application triggers.")
 
     def _index_installed_applications(self) -> None:
-        """Scan system XDG directories and index all installed .desktop applications."""
+        """Scan system directories and index all installed applications (Linux XDG & Windows Start Menu)."""
+        if sys.platform == "win32":
+            self._index_windows_applications()
+            return
+
         desktop_dirs = [
             "/usr/share/applications",
             "/usr/local/share/applications",
@@ -448,7 +507,19 @@ class OSNavigationPlugin(BasePlugin):
         return False, "", "idle"
 
     def run_terminal_command(self, cmd: str) -> Tuple[bool, str]:
-        """Execute a command in a new visible terminal window."""
+        """Execute a command in a new visible terminal window (cross-platform)."""
+        if sys.platform == "win32":
+            if shutil.which("wt"):
+                try:
+                    subprocess.Popen(["wt.exe", "cmd.exe", "/k", cmd], start_new_session=True)
+                    return True, "Windows Terminal"
+                except Exception:
+                    pass
+            try:
+                subprocess.Popen(["cmd.exe", "/k", cmd], start_new_session=True)
+                return True, "Command Prompt"
+            except Exception:
+                return False, "Terminal" 
         # Kitty
         if shutil.which("kitty"):
             try:
@@ -470,11 +541,17 @@ class OSNavigationPlugin(BasePlugin):
     def open_url(self, url: str) -> bool:
         """Open a website URL in the user's default browser."""
         try:
+            import webbrowser
+            if sys.platform == "win32":
+                webbrowser.open(url)
+                return True
             for browser in ["google-chrome-stable", "google-chrome", "brave", "firefox", "xdg-open"]:
                 if shutil.which(browser):
                     subprocess.Popen([browser, url], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     self.ctx.logger.info(f"Opened URL via {browser}: {url}")
                     return True
+            webbrowser.open(url)
+            return True
         except Exception as e:
             self.ctx.logger.warning(f"Failed to open URL {url}: {e}")
         return False
@@ -595,6 +672,17 @@ class OSNavigationPlugin(BasePlugin):
         is_terminal = entry.get("is_terminal", False)
         desktop_id = entry.get("desktop_id", "")
 
+        if sys.platform == "win32" or entry.get("is_windows"):
+            try:
+                if hasattr(os, "startfile") and (exec_cmd.startswith("ms-") or os.path.exists(exec_cmd)):
+                    os.startfile(exec_cmd)
+                    return True
+                subprocess.Popen(["cmd.exe", "/c", "start", "", exec_cmd], shell=True)
+                return True
+            except Exception as e:
+                self.ctx.logger.warning(f"Windows app spawn failed for {exec_cmd}: {e}")
+                return False
+
         # If it requires a terminal, run it inside Kitty / Konsole
         if is_terminal:
             launched, _ = self.run_terminal_command(exec_cmd)
@@ -698,7 +786,19 @@ class OSNavigationPlugin(BasePlugin):
         }
 
     def lock_screen(self) -> bool:
-        """Lock the current desktop session."""
+        """Lock the current desktop session (cross-platform)."""
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                ctypes.windll.user32.LockWorkStation()
+                return True
+            except Exception:
+                try:
+                    subprocess.Popen(["rundll32.exe", "user32.dll,LockWorkStation"])
+                    return True
+                except Exception:
+                    return False
+
         for cmd in [["hyprlock"], ["swaylock"], ["loginctl", "lock-session"]]:
             if shutil.which(cmd[0]):
                 try:

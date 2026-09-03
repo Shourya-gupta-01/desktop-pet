@@ -47,10 +47,13 @@ if [ -f "${ROOT_DIR}/toggle_ai.sh" ]; then
     chmod +x "${DIST_DIR}/bin/toggle_ai.sh"
 fi
 
-# 4. Copy Installer & Uninstaller
-echo -e "${YELLOW}[4/4] Generating installer and packaging scripts...${NC}"
+# 4. Copy Installer & Uninstaller (Linux & Windows)
+echo -e "${YELLOW}[4/4] Generating installer and packaging scripts for Linux and Windows...${NC}"
 cp "${ROOT_DIR}/packaging/installer/install.sh" "${DIST_DIR}/install.sh"
 cp "${ROOT_DIR}/packaging/installer/uninstall.sh" "${DIST_DIR}/uninstall.sh"
+cp "${ROOT_DIR}/packaging/installer/install.ps1" "${DIST_DIR}/install.ps1"
+cp "${ROOT_DIR}/packaging/installer/uninstall.ps1" "${DIST_DIR}/uninstall.ps1"
+cp "${ROOT_DIR}/packaging/installer/hotkey_helper.ps1" "${DIST_DIR}/hotkey_helper.ps1"
 chmod +x "${DIST_DIR}/install.sh" "${DIST_DIR}/uninstall.sh"
 
 echo -e "${GREEN}=====================================================${NC}"
