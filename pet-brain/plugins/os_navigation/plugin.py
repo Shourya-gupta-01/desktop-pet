@@ -214,17 +214,29 @@ class OSNavigationPlugin(BasePlugin):
         # -------------------------------------------------------------
         # 1. HARDWARE & SYSTEM TELEMETRY
         # -------------------------------------------------------------
-        # SSD / Disk space
-        if any(k in text for k in ["disk space", "disk storage", "ssd storage", "ssd space", "hard drive", "free space", "storage do i have", "disk do i have", "how much storage", "how much disk"]):
+        # Combined RAM & Disk & Full System Info
+        if any(k in text for k in [
+            "ram and disk", "disk and ram", "system info", "system information", "system stats",
+            "hardware stats", "hardware info", "pc stats", "pc info", "computer stats", "system status",
+            "full system", "all stats"
+        ]):
             stats = self.get_system_stats()
+            cpu = stats.get("cpu_percent", 0)
+            ram_pct = stats.get("ram_percent", 0)
+            ram_used_gb = stats.get("ram_used_gb", 0)
+            ram_total_gb = stats.get("ram_total_gb", 0)
             disk_free = stats.get("disk_free_gb", 0)
             disk_total = stats.get("disk_total_gb", 0)
             disk_used = stats.get("disk_used_gb", 0)
             disk_pct = stats.get("disk_percent", 0)
-            return True, f"SSD Storage: {disk_free:.1f} GB free out of {disk_total:.1f} GB ({disk_pct}% used, {disk_used:.1f} GB used)! 💾✨", "proud"
+            return True, f"RAM: {ram_pct}% ({ram_used_gb:.1f}/{ram_total_gb:.1f} GB) | Disk: {disk_pct}% ({disk_free:.1f} GB free/{disk_total:.1f} GB) | CPU: {cpu}% 🚀", "proud"
 
-        # RAM & CPU
-        if any(k in text for k in ["how much ram", "ram do i have", "memory usage", "check ram", "check cpu", "cpu usage", "system usage", "hardware stats", "system stats"]):
+        # RAM & CPU / Memory
+        if any(k in text for k in [
+            "ram", "memory", "cpu", "how much ram", "ram do i have", "memory usage", "check ram",
+            "check cpu", "cpu usage", "ram usage", "my ram", "how much memory", "memory is used",
+            "ram is used", "tell my ram", "check memory"
+        ]):
             stats = self.get_system_stats()
             cpu = stats.get("cpu_percent", 0)
             ram_pct = stats.get("ram_percent", 0)
@@ -232,13 +244,27 @@ class OSNavigationPlugin(BasePlugin):
             ram_total_gb = stats.get("ram_total_gb", 0)
             return True, f"RAM: {ram_pct}% ({ram_used_gb:.1f}/{ram_total_gb:.1f} GB) | CPU: {cpu}% 🚀", "proud"
 
-        # Battery
-        if any(k in text for k in ["battery", "battery percentage", "battery level", "power level", "charging"]):
+        # SSD / Disk space & Storage
+        if any(k in text for k in [
+            "disk", "storage", "ssd", "hard drive", "free space", "disk space", "disk storage",
+            "ssd storage", "ssd space", "disk usage", "how much storage", "how much disk",
+            "storage do i have", "disk do i have", "storage usage", "drive space", "drive storage",
+            "my disk", "my storage", "tell my disk"
+        ]):
+            stats = self.get_system_stats()
+            disk_free = stats.get("disk_free_gb", 0)
+            disk_total = stats.get("disk_total_gb", 0)
+            disk_used = stats.get("disk_used_gb", 0)
+            disk_pct = stats.get("disk_percent", 0)
+            return True, f"Disk: {disk_pct}% used ({disk_free:.1f} GB free out of {disk_total:.1f} GB, {disk_used:.1f} GB used)! 💾✨", "proud"
+
+        # Battery & Power
+        if any(k in text for k in ["battery", "power", "charging", "battery status", "battery percentage", "battery level", "power level", "my battery", "tell battery"]):
             stats = self.get_system_stats()
             batt = stats.get("battery")
             if batt is not None:
                 charging = "⚡ Charging" if stats.get("power_plugged") else "🔋 Discharging"
-                return True, f"Battery is currently at {int(batt)}% ({charging})! ✨", "happy" if batt > 30 else "startled"
+                return True, f"Battery: {int(batt)}% ({charging})! ✨", "happy" if batt > 30 else "startled"
             return True, "No battery detected (desktop system connected to AC power). 🔌", "idle"
 
         # Current Time & Date

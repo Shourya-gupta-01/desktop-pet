@@ -167,15 +167,28 @@ class VoiceChatPlugin(BasePlugin):
             return None
 
     def _capture_screen(self) -> Optional[bytes]:
-        """Capture the current Wayland desktop screen in volatile RAM with full native resolution."""
+        """Capture the current Wayland desktop screen and resize to 720p (1280x720) in volatile RAM."""
         try:
             capture = subprocess.run(
-                ["grim", "-t", "jpeg", "-q", "75", "-"],
+                ["grim", "-t", "jpeg", "-q", "80", "-"],
                 capture_output=True,
                 timeout=5.0,
             )
             if capture.returncode == 0 and capture.stdout:
-                return capture.stdout
+                try:
+                    from PIL import Image
+                    import io
+                    img = Image.open(io.BytesIO(capture.stdout))
+                    w, h = img.size
+                    target_h = 720
+                    target_w = int((w / h) * target_h)
+                    img_720p = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                    out_buf = io.BytesIO()
+                    img_720p.save(out_buf, format="JPEG", quality=85)
+                    return out_buf.getvalue()
+                except Exception as resize_err:
+                    self.ctx.logger.debug(f"Pillow 720p resize fallback: {resize_err}")
+                    return capture.stdout
             return None
         except Exception as e:
             self.ctx.logger.warning(f"Screen capture failed: {e}")
@@ -279,11 +292,12 @@ class VoiceChatPlugin(BasePlugin):
             self.is_processing = False
             self.is_recording = False
 
-        ZORO_PERSONA = (
-            "You are Roronoa Zoro, the Pirate Hunter and master swordsman of the Straw Hat Pirates from One Piece. "
-            "You are stoic, tough, loyal, blunt, and confident, addressing the user as Captain, Oi, or Nakama. "
-            "You have an awful sense of direction (often confusing North and South), love napping, training with massive weights, drinking sake, and slicing obstacles with your three swords. "
-            "Give a concise, badass, in-character response in 1 or 2 punchy sentences. Never break character."
+        SYSTEM_PROMPT = (
+            "You are a serious, direct, and hyper-concise AI assistant. "
+            "STRICT RULES: "
+            "1. Give direct, serious, factual answers with NO nonsense, NO conversational filler, and NO fluff. "
+            "2. Whenever possible, answer in ONE line or ONE word. "
+            "3. Be extremely precise and to the point. Never provide unnecessary explanations unless explicitly asked."
         )
 
         # 1. Webcam Vision Path
@@ -294,9 +308,9 @@ class VoiceChatPlugin(BasePlugin):
             image_bytes = self._capture_webcam()
             if image_bytes:
                 vision_prompt = (
-                    f"The user asked while in front of their webcam: '{text}'.\n"
-                    f"Persona: {ZORO_PERSONA}\n"
-                    "Look through their camera, observe the visual scene, and give a sharp, in-character answer in 1 or 2 sentences."
+                    f"User query: '{text}'.\n"
+                    f"System: {SYSTEM_PROMPT}\n"
+                    "Inspect the camera frame and answer the user query in one short line or one word."
                 )
                 self.ctx.ai.prompt_vision_async(
                     prompt=vision_prompt,
@@ -316,9 +330,9 @@ class VoiceChatPlugin(BasePlugin):
             image_bytes = self._capture_screen()
             if image_bytes:
                 vision_prompt = (
-                    f"The user asked while looking at their desktop screen: '{text}'.\n"
-                    f"Persona: {ZORO_PERSONA}\n"
-                    "Look at their screen, analyze the open windows, code, or applications, and give an accurate, in-character answer in 1 or 2 sentences."
+                    f"User query: '{text}'.\n"
+                    f"System: {SYSTEM_PROMPT}\n"
+                    "Inspect the desktop screen and answer the user query in one short line or one word."
                 )
                 self.ctx.ai.prompt_vision_async(
                     prompt=vision_prompt,
@@ -330,11 +344,11 @@ class VoiceChatPlugin(BasePlugin):
             else:
                 self.ctx.logger.warning("Screen capture unavailable, falling back to text prompt.")
 
-        # 3. General Conversational / Chat Path (Zoro persona)
+        # 3. General Conversational / Chat Path
         prompt_text = (
-            f"The user said: '{text}'.\n"
-            f"Persona: {ZORO_PERSONA}\n"
-            "Give a complete, in-character response in 1 or 2 sentences."
+            f"User query: '{text}'.\n"
+            f"System: {SYSTEM_PROMPT}\n"
+            "Provide a direct, serious answer in one line or one word."
         )
 
         self.ctx.ai.prompt_async(

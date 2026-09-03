@@ -30,25 +30,23 @@ def test_plugin_loader():
     plugins = loader.discover_and_load()
 
     logger.info(f"Loaded plugins: {list(plugins.keys())}")
-    assert "HelloWorld" in plugins, "HelloWorld plugin should be loaded"
+    assert "VoiceChat" in plugins, "VoiceChat plugin should be loaded"
+    assert "OSNavigation" in plugins, "OSNavigation plugin should be loaded"
+    assert "FaceVerify" in plugins, "FaceVerify plugin should be loaded"
     assert "ClapReactor" in plugins, "ClapReactor plugin should be loaded"
-    assert "HotkeyAction" in plugins, "HotkeyAction plugin should be loaded"
-    assert "AICompanion" in plugins, "AICompanion plugin should be loaded"
-    assert len(plugins) >= 4, f"Expected at least 4 plugins, found {len(plugins)}"
+    assert len(plugins) == 4, f"Expected 4 active plugins, found {len(plugins)}"
 
-    # 1. Test InputEvent routing (Hotkey global_action_x)
+    # 1. Test InputEvent routing (Super+Z hotkey: voice_action_z)
     hotkey_event = IncomingEvent(
         event_type="input_event",
-        data={"hotkey_id": "global_action_x", "timestamp": 12345},
+        data={"hotkey_id": "voice_action_z", "timestamp": 12345},
     )
     mock_ipc.sent_messages.clear()
     loader.dispatch_event(hotkey_event)
 
-    # Both HelloWorld (subscribed to input_event) and HotkeyAction (subscribed to hotkey:global_action_x) should have fired
     sent_types = [msg.WhichOneof("message_type") for msg in mock_ipc.sent_messages]
-    logger.info(f"Messages sent after HotkeyEvent: {sent_types}")
-    assert "speech_bubble" in sent_types, "HelloWorld should have sent speech_bubble"
-    assert "emotion_command" in sent_types, "HotkeyAction should have sent emotion_command"
+    logger.info(f"Messages sent after Super+Z HotkeyEvent: {sent_types}")
+    assert "emotion_command" in sent_types, "VoiceChat should have sent emotion_command"
 
     # 2. Test AudioEvent routing (Clap)
     clap_event = IncomingEvent(

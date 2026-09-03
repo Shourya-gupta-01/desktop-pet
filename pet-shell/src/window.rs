@@ -2,9 +2,8 @@ use eframe::egui;
 use std::path::Path;
 use crossbeam_channel::{Receiver, Sender};
 use std::fs;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::ipc::pet::{PetMessage, InputEvent, pet_message::MessageType};
+use crate::ipc::pet::{PetMessage, pet_message::MessageType};
 
 /// Holds the raw PNG/JPG bytes of the current sprite.
 /// We load the texture lazily on the first frame, then cache the TextureHandle.
@@ -12,7 +11,7 @@ pub struct PetWindow {
     sprite_bytes: Option<Vec<u8>>,
     sprite_texture: Option<egui::TextureHandle>,
     ipc_rx: Receiver<PetMessage>,
-    ipc_tx: Sender<PetMessage>,
+    _ipc_tx: Sender<PetMessage>,
     speech_text: Option<String>,
     speech_expiry: Option<std::time::Instant>,
     debug_printed: bool,
@@ -24,7 +23,7 @@ impl PetWindow {
             sprite_bytes: None,
             sprite_texture: None,
             ipc_rx,
-            ipc_tx,
+            _ipc_tx: ipc_tx,
             speech_text: None,
             speech_expiry: None,
             debug_printed: false,
@@ -36,7 +35,7 @@ impl PetWindow {
         window
     }
 
-    /// Resolve an emotion identifier to an existing sprite image path.
+    /// Resolve an emotion identifier to an existing sprite image path across install & dev roots.
     pub fn resolve_sprite(emotion: &str) -> Option<String> {
         let emotion_clean = emotion.trim().to_lowercase();
         let mut candidates = vec![emotion_clean.clone()];
@@ -48,20 +47,45 @@ impl PetWindow {
 
         let file_names = ["placeholder.png", "pasted file.png", "sprite.png", "placeholder.jpg", "sprite.jpg"];
 
-        for emo in &candidates {
-            for fname in &file_names {
-                let candidate_path = format!("../assets/sprites/{}/{}", emo, fname);
-                if Path::new(&candidate_path).exists() {
-                    return Some(candidate_path);
+        // Collect potential asset root directories
+        let mut asset_roots = Vec::new();
+
+        if let Ok(env_assets) = std::env::var("DESKTOP_PET_ASSETS_DIR") {
+            asset_roots.push(std::path::PathBuf::from(env_assets));
+        }
+
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                asset_roots.push(exe_dir.join("../assets/sprites"));
+                asset_roots.push(exe_dir.join("assets/sprites"));
+            }
+        }
+
+        if let Ok(home) = std::env::var("HOME") {
+            asset_roots.push(std::path::PathBuf::from(home).join(".local/share/desktop-pet/assets/sprites"));
+        }
+
+        asset_roots.push(std::path::PathBuf::from("assets/sprites"));
+        asset_roots.push(std::path::PathBuf::from("../assets/sprites"));
+
+        for root in &asset_roots {
+            for emo in &candidates {
+                for fname in &file_names {
+                    let p = root.join(emo).join(fname);
+                    if p.exists() {
+                        return Some(p.to_string_lossy().to_string());
+                    }
                 }
             }
         }
 
-        // Fallback to idle
-        for fname in &file_names {
-            let fallback_path = format!("../assets/sprites/idle/{}", fname);
-            if Path::new(&fallback_path).exists() {
-                return Some(fallback_path);
+        // Fallback to idle in any asset root
+        for root in &asset_roots {
+            for fname in &file_names {
+                let p = root.join("idle").join(fname);
+                if p.exists() {
+                    return Some(p.to_string_lossy().to_string());
+                }
             }
         }
 
@@ -141,26 +165,6 @@ impl eframe::App for PetWindow {
         // Since mouse passthrough is active, the window never receives OS input focus.
         // We request a continuous 30fps repaint so incoming IPC messages are drained immediately.
         ctx.request_repaint_after(std::time::Duration::from_millis(33));
-
-        // --- PHASE 2 CHECKPOINT: SEND INPUT EVENT ---
-        // If the user presses Space while the window is focused, send an event to Python.
-        ctx.input(|i| {
-            if i.key_pressed(egui::Key::Space) {
-                let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
-                let event = InputEvent {
-                    hotkey_id: "space_test".to_string(),
-                    timestamp,
-                };
-                let msg = PetMessage {
-                    message_type: Some(MessageType::InputEvent(event)),
-                };
-                if let Err(e) = self.ipc_tx.send(msg) {
-                    println!("[Window] Failed to send InputEvent: {}", e);
-                } else {
-                    println!("[Window] Sent InputEvent to Brain!");
-                }
-            }
-        });
 
         // Drain any incoming IPC messages (non-blocking)
         while let Ok(msg) = self.ipc_rx.try_recv() {

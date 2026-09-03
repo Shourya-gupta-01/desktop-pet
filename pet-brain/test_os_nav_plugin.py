@@ -78,7 +78,7 @@ def main():
 
     # 6. SSD / Disk Space Telemetry Queries
     handled, reply, emotion = os_plugin.handle_query("how much disk space do I have?")
-    assert handled and "SSD Storage:" in reply, f"Disk space query failed: {reply}"
+    assert handled and ("Disk:" in reply or "SSD Storage:" in reply or "Storage:" in reply), f"Disk space query failed: {reply}"
     logger.info(f"[SUCCESS] Disk space query response: {reply} (Emotion: {emotion})")
 
     # 7. Disambiguation (Conversational & Screen queries must NOT be falsely triggered)

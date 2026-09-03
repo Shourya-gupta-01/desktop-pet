@@ -23,7 +23,7 @@ pub fn start_hotkey_listener(tx: Sender<PetMessage>) {
             if let Ok((amt, _src)) = socket.recv_from(&mut buf) {
                 let payload = String::from_utf8_lossy(&buf[..amt]).trim().to_string();
                 let hotkey_id = if payload.is_empty() || payload == "trigger" {
-                    "global_action_x".to_string()
+                    "voice_action_z".to_string()
                 } else {
                     payload
                 };

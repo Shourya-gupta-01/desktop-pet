@@ -44,3 +44,9 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Build distributions & Virtual Environments
+dist/
+build/
+.venv/
+venv/

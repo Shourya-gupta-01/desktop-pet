@@ -1,7 +1,0 @@
-name: HelloWorld
-version: 1.0.0
-author: DesktopPetTeam
-description: Basic greeting plugin that logs when input events occur.
-subscriptions:
-  - input_event
-tick_interval: 10.0

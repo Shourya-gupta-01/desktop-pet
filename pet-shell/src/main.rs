@@ -1,27 +1,31 @@
 mod ipc;
 mod window;
 mod input;
+mod sidecar;
 
 use crossbeam_channel::unbounded;
 use eframe::egui;
 use window::PetWindow;
+use sidecar::SidecarSupervisor;
 
 fn main() -> eframe::Result<()> {
-    // 1. Set up the IPC communication channel
+    // 1. Start the Sidecar Supervisor (automatically spawns & monitors pet-brain)
+    let _supervisor = SidecarSupervisor::start();
+
+    // 2. Set up the IPC communication channel
     let (ipc_tx, ipc_rx) = unbounded(); // IPC thread -> UI thread
     let (ui_tx, ui_rx) = unbounded();   // UI thread -> IPC thread
 
-    // 2. Start the background sensor threads (Input & Audio)
+    // 3. Start the background sensor threads (Input & Audio)
     input::hotkeys::start_hotkey_listener(ui_tx.clone());
     input::audio::start_audio_listener(ui_tx.clone());
 
-    // 3. Start the ZeroMQ background thread
-    // This allows the Rust UI to start instantly even if Python is dead/loading
+    // 4. Start the ZeroMQ background thread
+    // This allows the Rust UI to start instantly and reconnect even if Python is loading
     ipc::client::start_ipc_thread(ipc_tx, ui_rx);
 
-    // 3. Configure the transparent UI Window
+    // 5. Configure the transparent UI Window
     //    .with_app_id() sets the Wayland app_id so Hyprland can match windowrules against it.
-    //    Without this, the class is empty and Hyprland treats it as a regular tiled window.
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_decorations(false)
@@ -36,7 +40,7 @@ fn main() -> eframe::Result<()> {
 
     println!("[Main] Starting pet-shell UI...");
 
-    // 4. Run the app
+    // 6. Run the app
     eframe::run_native(
         "Desktop Pet Shell",
         options,
